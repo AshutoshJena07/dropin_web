@@ -392,14 +392,21 @@
           } catch(e) {}
         }
 
-        // Test each candidate to pick the fastest working stream (Local Wi-Fi/Hotspot or Tunnel)
-        let targetUrl = '';
+        // Sort by timestamp descending (newest first)
+        validMessages.sort((a, b) => b.time - a.time);
+
+        // Test each candidate to pick the fastest working stream (Local Hotspot/Wi-Fi or Tunnel)
         for (const item of validMessages) {
           try {
             const base = item.url.split('?')[0];
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2500);
+            
             const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(cleanPin)}`, { 
-              signal: AbortSignal.timeout(2500) 
+              signal: controller.signal 
             });
+            clearTimeout(timeoutId);
+
             if (testRes.ok) {
               targetUrl = item.url;
               const files = await testRes.json();
@@ -429,7 +436,7 @@
           throw new Error('Session not found. Make sure Dropin is actively sharing on your phone.');
         }
 
-        // Redirect if direct fetch couldn't display inline
+        // Redirect to stream
         window.location.href = targetUrl;
       } catch (err) {
         statusMsg.className = 'status-msg error';
