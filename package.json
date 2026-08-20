@@ -1,0 +1,12 @@
+{
+  "name": "dropin-web",
+  "version": "1.0.0",
+  "description": "Web portal for Dropin file transfers",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve ."
+  },
+  "keywords": ["file-transfer", "dropin", "airdrop", "p2p"],
+  "author": "Ashutosh Jena",
+  "license": "MIT"
+}

@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dropin | Quick Asset Transfer</title>
+  <meta name="description" content="Receive files securely from your Android phone without logging in." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #07090e;
+      --card-bg: rgba(255, 255, 255, 0.05);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --primary: #00e676;
+      --primary-glow: rgba(0, 230, 118, 0.35);
+      --accent: #9e1b43;
+      --text: #ffffff;
+      --text-muted: rgba(255, 255, 255, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow-x: hidden;
+      padding: 24px;
+    }
+
+    /* Ambient Background Glows */
+    .bg-gradient {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 20%, rgba(158, 27, 67, 0.25) 0%, transparent 60%),
+                  radial-gradient(circle at 80% 80%, rgba(0, 230, 118, 0.15) 0%, transparent 50%);
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 480px;
+      margin: auto;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid var(--card-border);
+      border-radius: 32px;
+      padding: 44px 36px;
+      text-align: center;
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+      transition: all 0.3s ease;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px;
+      height: 64px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo-badge svg {
+      width: 32px;
+      height: 32px;
+      fill: var(--primary);
+    }
+
+    .brand-title {
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: 2px;
+      margin-bottom: 6px;
+      background: linear-gradient(135deg, #ffffff 40%, rgba(255, 255, 255, 0.7));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      font-weight: 500;
+    }
+
+    /* PIN Inputs */
+    .pin-container {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .pin-digit {
+      width: 52px;
+      height: 64px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1.5px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      color: #fff;
+      font-size: 1.7rem;
+      font-weight: 800;
+      text-align: center;
+      text-transform: uppercase;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .pin-digit:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 20px var(--primary-glow);
+      transform: translateY(-2px);
+      background: rgba(0, 0, 0, 0.6);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px 24px;
+      background: linear-gradient(135deg, #00e676, #00b0ff);
+      color: #07090e;
+      border: none;
+      border-radius: 18px;
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.25s ease;
+      box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3);
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 35px rgba(0, 230, 118, 0.45);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .status-msg {
+      margin-top: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      min-height: 24px;
+    }
+
+    .status-msg.error {
+      color: #ff5252;
+    }
+
+    .status-msg.success {
+      color: var(--primary);
+    }
+
+    /* Files View Screen */
+    .files-view {
+      display: none;
+      text-align: left;
+    }
+
+    .files-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .files-count {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding-right: 4px;
+      margin-bottom: 24px;
+    }
+
+    .file-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .file-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateX(4px);
+    }
+
+    .file-info {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .file-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+
+    .file-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      display: block;
+      font-weight: 500;
+    }
+
+    .dl-action-btn {
+      background: var(--primary);
+      color: #07090e;
+      border-radius: 12px;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+
+    .dl-action-btn:hover {
+      opacity: 0.9;
+    }
+
+    .back-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 12px;
+      border-radius: 14px;
+      width: 100%;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    .back-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .footer {
+      position: fixed;
+      bottom: 20px;
+      width: 100%;
+      text-align: center;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.3);
+      letter-spacing: 1px;
+      font-weight: 600;
+      z-index: 1;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid rgba(7, 9, 14, 0.3);
+      border-top-color: #07090e;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-gradient"></div>
+
+  <div class="container">
+    <!-- PIN Entry Card -->
+    <div class="card" id="pinCard">
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24">
+          <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+        </svg>
+      </div>
+      <h1 class="brand-title">DROPIN</h1>
+      <p class="brand-subtitle">Enter the 6-digit session PIN from your phone</p>
+
+      <div class="pin-container">
+        <input type="text" maxlength="1" class="pin-digit" autofocus data-index="0" />
+        <input type="text" maxlength="1" class="pin-digit" data-index="1" />
+        <input type="text" maxlength="1" class="pin-digit" data-index="2" />
+        <input type="text" maxlength="1" class="pin-digit" data-index="3" />
+        <input type="text" maxlength="1" class="pin-digit" data-index="4" />
+        <input type="text" maxlength="1" class="pin-digit" data-index="5" />
+      </div>
+
+      <button class="btn" id="connectBtn" onclick="connectSession()">
+        <span id="btnText">CONNECT & DOWNLOAD</span>
+        <div class="spinner" id="btnSpinner"></div>
+      </button>
+
+      <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <!-- Files View Card -->
+    <div class="card files-view" id="filesCard">
+      <div class="files-header">
+        <div>
+          <h2 style="font-size: 1.3rem; font-weight: 800;">Available Assets</h2>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="sessionPinLabel"></span>
+        </div>
+        <div class="files-count" id="filesCount">0 Files</div>
+      </div>
+
+      <div class="file-list" id="fileListContainer"></div>
+
+      <button class="btn" id="downloadAllBtn" onclick="downloadAllFiles()" style="margin-bottom: 10px;">
+        DOWNLOAD ALL FILES
+      </button>
+
+      <button class="back-btn" onclick="resetView()">
+        Enter Another PIN
+      </button>
+    </div>
+  </div>
+
+  <div class="footer">crafted by ashutosh jena</div>
+
+  <script>
+    const pinInputs = document.querySelectorAll('.pin-digit');
+    const connectBtn = document.getElementById('connectBtn');
+    const btnText = document.getElementById('btnText');
+    const btnSpinner = document.getElementById('btnSpinner');
+    const statusMsg = document.getElementById('statusMsg');
+    const pinCard = document.getElementById('pinCard');
+    const filesCard = document.getElementById('filesCard');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const filesCount = document.getElementById('filesCount');
+    const sessionPinLabel = document.getElementById('sessionPinLabel');
+
+    let currentSessionUrl = '';
+    let currentFiles = [];
+
+    // PIN Input Auto-focus & Navigation
+    pinInputs.forEach((input, index) => {
+      input.addEventListener('input', (e) => {
+        const val = e.target.value.toUpperCase();
+        e.target.value = val;
+        if (val && index < pinInputs.length - 1) {
+          pinInputs[index + 1].focus();
+        }
+        checkAutoSubmit();
+      });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !e.target.value && index > 0) {
+          pinInputs[index - 1].focus();
+        } else if (e.key === 'Enter') {
+          connectSession();
+        }
+      });
+
+      input.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
+        if (text.length >= 6) {
+          for (let i = 0; i < 6; i++) {
+            pinInputs[i].value = text[i] || '';
+          }
+          pinInputs[5].focus();
+          checkAutoSubmit();
+        }
+      });
+    });
+
+    function getEnteredPin() {
+      let pin = '';
+      pinInputs.forEach(input => pin += input.value.trim());
+      return pin.toUpperCase();
+    }
+
+    function checkAutoSubmit() {
+      if (getEnteredPin().length === 6) {
+        connectSession();
+      }
+    }
+
+    function setLoading(isLoading) {
+      connectBtn.disabled = isLoading;
+      btnText.style.display = isLoading ? 'none' : 'block';
+      btnSpinner.style.display = isLoading ? 'block' : 'none';
+      if (isLoading) statusMsg.textContent = '';
+    }
+
+    async function connectSession() {
+      const pin = getEnteredPin();
+      if (pin.length < 6) {
+        statusMsg.className = 'status-msg error';
+        statusMsg.textContent = 'Please enter all 6 digits of the PIN';
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        // Step 1: Resolve PIN with Vercel API
+        const resolveRes = await fetch(`/api/resolve?pin=${encodeURIComponent(pin)}`);
+        const resolveData = await resolveRes.json();
+
+        if (!resolveRes.ok || !resolveData.url) {
+          throw new Error(resolveData.error || 'Session not found. Verify PIN on your phone.');
+        }
+
+        currentSessionUrl = resolveData.url;
+
+        // Step 2: Fetch files directly from phone stream
+        const filesRes = await fetch(`${currentSessionUrl.split('?')[0]}/api/files?token=${encodeURIComponent(pin)}`);
+        if (!filesRes.ok) throw new Error('Phone stream is offline or disconnected.');
+        
+        const files = await filesRes.json();
+        currentFiles = files || [];
+
+        displayFiles(pin, currentFiles);
+      } catch (err) {
+        statusMsg.className = 'status-msg error';
+        statusMsg.textContent = err.message;
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function displayFiles(pin, files) {
+      pinCard.style.display = 'none';
+      filesCard.style.display = 'block';
+
+      sessionPinLabel.textContent = `Session PIN: ${pin}`;
+      filesCount.textContent = `${files.length} File${files.length === 1 ? '' : 's'}`;
+      fileListContainer.innerHTML = '';
+
+      if (files.length === 0) {
+        fileListContainer.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:20px;">No files in this stream.</div>';
+        return;
+      }
+
+      files.forEach(f => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+
+        const info = document.createElement('div');
+        info.className = 'file-info';
+
+        const name = document.createElement('span');
+        name.className = 'file-name';
+        name.textContent = f.name;
+
+        const size = document.createElement('span');
+        size.className = 'file-meta';
+        const mb = (f.size / (1024 * 1024)).toFixed(2);
+        size.textContent = `${mb} MB`;
+
+        info.appendChild(name);
+        info.appendChild(size);
+
+        const dlBtn = document.createElement('a');
+        dlBtn.className = 'dl-action-btn';
+        dlBtn.textContent = 'DOWNLOAD';
+        const baseUrl = currentSessionUrl.split('?')[0];
+        dlBtn.href = `${baseUrl}/download?id=${encodeURIComponent(f.id)}&token=${encodeURIComponent(pin)}`;
+        dlBtn.download = f.name;
+
+        item.appendChild(info);
+        item.appendChild(dlBtn);
+        fileListContainer.appendChild(item);
+      });
+    }
+
+    function downloadAllFiles() {
+      const links = fileListContainer.querySelectorAll('.dl-action-btn');
+      links.forEach((link, idx) => {
+        setTimeout(() => {
+          link.click();
+        }, idx * 500);
+      });
+    }
+
+    function resetView() {
+      filesCard.style.display = 'none';
+      pinCard.style.display = 'block';
+      pinInputs.forEach(i => i.value = '');
+      statusMsg.textContent = '';
+      pinInputs[0].focus();
+    }
+  </script>
+</body>
+</html>
