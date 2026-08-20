@@ -321,7 +321,27 @@
 
       input.addEventListener('paste', (e) => {
         e.preventDefault();
-        const text = (e.clipboardData || window.clipboardData).getData('text').trim().toUpperCase();
+        const raw = (e.clipboardData || window.clipboardData).getData('text').trim();
+        
+        // If a full Dropin stream URL was pasted, connect directly
+        if (raw.startsWith('http://') || raw.startsWith('https://')) {
+          try {
+            const urlObj = new URL(raw);
+            const tokenParam = urlObj.searchParams.get('token');
+            if (tokenParam && tokenParam.length === 6) {
+              for (let i = 0; i < 6; i++) {
+                pinInputs[i].value = tokenParam[i] || '';
+              }
+            }
+            window.location.href = raw;
+            return;
+          } catch(err) {
+            window.location.href = raw;
+            return;
+          }
+        }
+
+        const text = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (text.length >= 6) {
           for (let i = 0; i < 6; i++) {
             pinInputs[i].value = text[i] || '';
@@ -335,7 +355,7 @@
     function getEnteredPin() {
       let pin = '';
       pinInputs.forEach(i => pin += i.value.trim());
-      return pin.toUpperCase();
+      return pin.toUpperCase().replace(/[^A-Z0-9]/g, '');
     }
 
     function checkAutoSubmit() {
@@ -344,11 +364,61 @@
       }
     }
 
-    function setLoading(isLoading) {
+    function setLoading(isLoading, text) {
       connectBtn.disabled = isLoading;
       btnText.style.display = isLoading ? 'none' : 'block';
       btnSpinner.style.display = isLoading ? 'block' : 'none';
-      if (isLoading) statusMsg.textContent = '';
+      if (isLoading) {
+        statusMsg.className = 'status-msg';
+        statusMsg.textContent = text || 'Locating stream...';
+      }
+    }
+
+    async function fetchRelayCandidates(cleanPin) {
+      const topics = [
+        `https://ntfy.sh/dropin_session_${cleanPin.toLowerCase()}/json?poll=1`,
+        `https://ntfy.sh/dropin_session_${cleanPin.toUpperCase()}/json?poll=1`,
+        `https://ntfy.sh/dropin_${cleanPin.toLowerCase()}/json?poll=1`,
+        `https://ntfy.sh/dropin_${cleanPin.toUpperCase()}/json?poll=1`
+      ];
+
+      const validMessages = [];
+
+      await Promise.all(topics.map(async (topicUrl) => {
+        try {
+          const relayRes = await fetch(topicUrl, { cache: 'no-store' });
+          if (relayRes.ok) {
+            const text = await relayRes.text();
+            const lines = text.trim().split('\n');
+            for (const line of lines) {
+              try {
+                const data = JSON.parse(line);
+                if (data.message && data.message.startsWith('http')) {
+                  validMessages.push({
+                    url: data.message.trim(),
+                    time: data.time || 0
+                  });
+                }
+              } catch(e) {}
+            }
+          }
+        } catch(e) {}
+      }));
+
+      // Check internal resolve API if present
+      try {
+        const res = await fetch(`/api/resolve?pin=${encodeURIComponent(cleanPin)}`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.url) {
+            validMessages.push({ url: data.url, time: Date.now() / 1000 });
+          }
+        }
+      } catch(e) {}
+
+      // Sort by newest first
+      validMessages.sort((a, b) => b.time - a.time);
+      return validMessages;
     }
 
     async function connectSession() {
@@ -359,90 +429,60 @@
         return;
       }
 
-      setLoading(true);
+      setLoading(true, 'Connecting to Dropin session...');
 
-      try {
-        let targetUrl = '';
-        const cleanPin = pin.trim();
-        const topics = [
-          `https://ntfy.sh/dropin_session_${cleanPin.toLowerCase()}/json?poll=1`,
-          `https://ntfy.sh/dropin_session_${cleanPin.toUpperCase()}/json?poll=1`
-        ];
+      const maxAttempts = 3;
+      let targetUrl = '';
 
-        const validMessages = [];
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          if (attempt > 1) {
+            statusMsg.textContent = `Finding stream (Attempt ${attempt}/${maxAttempts})...`;
+          }
 
-        for (const topicUrl of topics) {
-          try {
-            const relayRes = await fetch(topicUrl, { cache: 'no-store' });
-            if (relayRes.ok) {
-              const text = await relayRes.text();
-              const lines = text.trim().split('\n');
-              for (const line of lines) {
-                try {
-                  const data = JSON.parse(line);
-                  if (data.message && data.message.startsWith('http')) {
-                    validMessages.push({
-                      url: data.message.trim(),
-                      time: data.time || 0
-                    });
-                  }
-                } catch(e) {}
+          const candidates = await fetchRelayCandidates(pin);
+
+          // 1. Try direct reachability on candidate streams (Local Hotspot/Wi-Fi or Tunnel)
+          for (const item of candidates) {
+            try {
+              const base = item.url.split('?')[0];
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
+                signal: controller.signal 
+              });
+              clearTimeout(timeoutId);
+
+              if (testRes.ok) {
+                targetUrl = item.url;
+                const files = await testRes.json();
+                displayFiles(pin, targetUrl, files);
+                setLoading(false);
+                return;
               }
-            }
-          } catch(e) {}
-        }
+            } catch(e) {}
+          }
 
-        // Sort by timestamp descending (newest first)
-        validMessages.sort((a, b) => b.time - a.time);
+          // 2. If candidates exist but direct CORS check didn't complete, choose the freshest
+          if (candidates.length > 0) {
+            targetUrl = candidates[0].url;
+            break;
+          }
 
-        // Test each candidate to pick the fastest working stream (Local Hotspot/Wi-Fi or Tunnel)
-        for (const item of validMessages) {
-          try {
-            const base = item.url.split('?')[0];
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 2500);
-            
-            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(cleanPin)}`, { 
-              signal: controller.signal 
-            });
-            clearTimeout(timeoutId);
+          if (attempt < maxAttempts) {
+            await new Promise(r => setTimeout(r, 1200));
+          }
+        } catch(e) {}
+      }
 
-            if (testRes.ok) {
-              targetUrl = item.url;
-              const files = await testRes.json();
-              displayFiles(cleanPin, targetUrl, files);
-              return;
-            }
-          } catch(e) {}
-        }
+      setLoading(false);
 
-        // If direct API fetch was blocked by CORS, use the freshest URL
-        if (!targetUrl && validMessages.length > 0) {
-          targetUrl = validMessages[0].url;
-        }
-
-        // Fallback: check internal resolve API if available
-        if (!targetUrl) {
-          try {
-            const res = await fetch(`/api/resolve?pin=${encodeURIComponent(cleanPin)}`, { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.url) targetUrl = data.url;
-            }
-          } catch(e) {}
-        }
-
-        if (!targetUrl) {
-          throw new Error('Session not found. Make sure Dropin is actively sharing on your phone.');
-        }
-
-        // Redirect to stream
+      if (targetUrl) {
         window.location.href = targetUrl;
-      } catch (err) {
+      } else {
         statusMsg.className = 'status-msg error';
-        statusMsg.textContent = err.message;
-      } finally {
-        setLoading(false);
+        statusMsg.textContent = 'Session not found. Make sure Dropin is actively sharing on your phone.';
       }
     }
 
