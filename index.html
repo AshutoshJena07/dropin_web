@@ -392,9 +392,25 @@
           } catch(e) {}
         }
 
-        // Always prioritize the freshest published URL
-        validMessages.sort((a, b) => b.time - a.time);
-        if (validMessages.length > 0) {
+        // Test each candidate to pick the fastest working stream (Local Wi-Fi/Hotspot or Tunnel)
+        let targetUrl = '';
+        for (const item of validMessages) {
+          try {
+            const base = item.url.split('?')[0];
+            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(cleanPin)}`, { 
+              signal: AbortSignal.timeout(2500) 
+            });
+            if (testRes.ok) {
+              targetUrl = item.url;
+              const files = await testRes.json();
+              displayFiles(cleanPin, targetUrl, files);
+              return;
+            }
+          } catch(e) {}
+        }
+
+        // If direct API fetch was blocked by CORS, use the freshest URL
+        if (!targetUrl && validMessages.length > 0) {
           targetUrl = validMessages[0].url;
         }
 
@@ -413,19 +429,7 @@
           throw new Error('Session not found. Make sure Dropin is actively sharing on your phone.');
         }
 
-        // Attempt file list fetch with fallback to instant stream redirect
-        try {
-          const base = targetUrl.split('?')[0];
-          const res = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`);
-          if (res.ok) {
-            const files = await res.json();
-            displayFiles(pin, targetUrl, files);
-            return;
-          }
-        } catch(e) {
-          // If cross-origin fetch is blocked, redirect directly to stream
-        }
-
+        // Redirect if direct fetch couldn't display inline
         window.location.href = targetUrl;
       } catch (err) {
         statusMsg.className = 'status-msg error';
