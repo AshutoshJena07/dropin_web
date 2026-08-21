@@ -459,6 +459,7 @@
                 const files = await testRes.json();
                 displayFiles(pin, targetUrl, files);
                 setLoading(false);
+                startPolling(pin, targetUrl);
                 return;
               }
             } catch(e) {}
@@ -479,11 +480,55 @@
       setLoading(false);
 
       if (targetUrl) {
+        try {
+            const base = targetUrl.split('?')[0];
+            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`);
+            if (testRes.ok) {
+                const files = await testRes.json();
+                displayFiles(pin, targetUrl, files);
+                startPolling(pin, targetUrl);
+                return;
+            }
+        } catch(e) {}
+        
+        // Fallback if Vercel UI fetch completely fails
         window.location.href = targetUrl;
       } else {
         statusMsg.className = 'status-msg error';
         statusMsg.textContent = 'Session not found. Make sure Dropin is actively sharing on your phone.';
       }
+    }
+
+    let pollInterval = null;
+    let currentPin = '';
+    let currentTargetUrl = '';
+
+    function startPolling(pin, initialUrl) {
+      currentPin = pin;
+      currentTargetUrl = initialUrl;
+      if (pollInterval) clearInterval(pollInterval);
+      
+      pollInterval = setInterval(async () => {
+        try {
+          const candidates = await fetchRelayCandidates(currentPin);
+          if (candidates.length > 0) {
+            const newestUrl = candidates[0].url;
+            if (newestUrl !== currentTargetUrl) {
+              const base = newestUrl.split('?')[0];
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 3000);
+              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, { signal: controller.signal });
+              clearTimeout(timeoutId);
+              
+              if (testRes.ok) {
+                currentTargetUrl = newestUrl;
+                const files = await testRes.json();
+                displayFiles(currentPin, currentTargetUrl, files);
+              }
+            }
+          }
+        } catch(e) {}
+      }, 5000);
     }
 
     function displayFiles(pin, targetUrl, files) {
@@ -529,6 +574,11 @@
     }
 
     function resetView() {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = null;
+      currentPin = '';
+      currentTargetUrl = '';
+      
       filesCard.style.display = 'none';
       pinCard.style.display = 'block';
       pinInputs.forEach(i => i.value = '');
