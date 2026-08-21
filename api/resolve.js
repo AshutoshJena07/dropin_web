@@ -1,4 +1,10 @@
-const { kv } = require('@vercel/kv');
+const { Redis } = require('@upstash/redis');
+
+// Initialize Upstash Redis with fallback for different Vercel environment variables
+const kv = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
+});
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -27,7 +33,7 @@ module.exports = async function handler(req, res) {
 
     const cleanPin = pin.trim().toUpperCase();
     
-    // Retrieve from Vercel KV
+    // Retrieve from Redis
     const session = await kv.get(`session:${cleanPin}`);
 
     if (!session) {
