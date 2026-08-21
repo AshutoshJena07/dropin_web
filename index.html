@@ -436,44 +436,16 @@
             } catch(e) {}
           }
 
-          // 2. If candidates exist but direct CORS check didn't complete, choose the freshest
-          if (candidates.length > 0) {
-            targetUrl = candidates[0].url;
-            break;
-          }
-
           if (attempt < maxAttempts) {
             await new Promise(r => setTimeout(r, 2000));
           }
         } catch(e) {}
-      }
 
+      // If we reach here, no candidate was successfully reached
       setLoading(false);
+      statusMsg.className = 'status-msg error';
+      statusMsg.textContent = 'Stream disconnected or unreachable. Make sure the sender is actively sharing and has internet connection.';
 
-      if (targetUrl) {
-        try {
-            const base = targetUrl.split('?')[0];
-            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, {
-              headers: {
-                'Bypass-Tunnel-Reminder': 'true',
-                'ngrok-skip-browser-warning': '69420'
-              }
-            });
-            if (testRes.ok) {
-                const files = await testRes.json();
-                displayFiles(pin, targetUrl, files);
-                startPolling(pin, targetUrl);
-                return;
-            }
-        } catch(e) {}
-        
-        // If we reach here, the tunnel URL is currently unreachable or returning HTML error pages.
-        statusMsg.className = 'status-msg error';
-        statusMsg.textContent = 'Stream disconnected. Trying to reconnect...';
-      } else {
-        statusMsg.className = 'status-msg error';
-        statusMsg.textContent = 'Session not found. Make sure Dropin is actively sharing on your phone.';
-      }
     }
 
     let pollInterval = null;
