@@ -1,4 +1,4 @@
-const { getSession } = require('./store');
+const { kv } = require('@vercel/kv');
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -18,23 +18,29 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { pin } = req.query;
+  try {
+    const { pin } = req.query;
 
-  if (!pin) {
-    return res.status(400).json({ error: 'Please provide a 6-digit PIN' });
-  }
+    if (!pin) {
+      return res.status(400).json({ error: 'Missing PIN parameter' });
+    }
 
-  const session = getSession(pin);
+    const cleanPin = pin.trim().toUpperCase();
+    
+    // Retrieve from Vercel KV
+    const session = await kv.get(`session:${cleanPin}`);
 
-  if (!session) {
-    return res.status(404).json({
-      error: 'Session not found or expired. Please verify the PIN on your phone.'
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      pin: cleanPin,
+      url: session.url,
+      createdAt: session.createdAt
     });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
-
-  return res.status(200).json({
-    success: true,
-    pin: pin.trim().toUpperCase(),
-    url: session.url
-  });
 };

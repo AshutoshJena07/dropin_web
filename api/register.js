@@ -1,4 +1,4 @@
-const { setSession, removeSession } = require('./store');
+const { kv } = require('@vercel/kv');
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -16,7 +16,10 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'DELETE') {
     const { pin } = req.body || req.query;
-    if (pin) removeSession(pin);
+    if (pin) {
+      const cleanPin = pin.trim().toUpperCase();
+      await kv.del(`session:${cleanPin}`);
+    }
     return res.status(200).json({ success: true, message: 'Session removed' });
   }
 
@@ -32,12 +35,15 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Missing PIN or URL' });
     }
 
-    setSession(pin, { url });
+    const cleanPin = pin.trim().toUpperCase();
+    
+    // Store in Vercel KV with an expiration of 24 hours (86400 seconds)
+    await kv.set(`session:${cleanPin}`, { url, createdAt: Date.now() }, { ex: 86400 });
 
     return res.status(200).json({
       success: true,
       message: 'Session registered successfully',
-      pin: pin.trim().toUpperCase(),
+      pin: cleanPin,
       url
     });
   } catch (error) {

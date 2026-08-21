@@ -375,37 +375,7 @@
     }
 
     async function fetchRelayCandidates(cleanPin) {
-      const topics = [
-        `https://ntfy.sh/dropin_session_${cleanPin.toLowerCase()}/json?poll=1`,
-        `https://ntfy.sh/dropin_session_${cleanPin.toUpperCase()}/json?poll=1`,
-        `https://ntfy.sh/dropin_${cleanPin.toLowerCase()}/json?poll=1`,
-        `https://ntfy.sh/dropin_${cleanPin.toUpperCase()}/json?poll=1`
-      ];
-
       const validMessages = [];
-
-      await Promise.all(topics.map(async (topicUrl) => {
-        try {
-          const relayRes = await fetch(topicUrl, { cache: 'no-store' });
-          if (relayRes.ok) {
-            const text = await relayRes.text();
-            const lines = text.trim().split('\n');
-            for (const line of lines) {
-              try {
-                const data = JSON.parse(line);
-                if (data.message && data.message.startsWith('http')) {
-                  validMessages.push({
-                    url: data.message.trim(),
-                    time: data.time || 0
-                  });
-                }
-              } catch(e) {}
-            }
-          }
-        } catch(e) {}
-      }));
-
-      // Check internal resolve API if present
       try {
         const res = await fetch(`/api/resolve?pin=${encodeURIComponent(cleanPin)}`, { cache: 'no-store' });
         if (res.ok) {
@@ -415,9 +385,6 @@
           }
         }
       } catch(e) {}
-
-      // Sort by newest first
-      validMessages.sort((a, b) => b.time - a.time);
       return validMessages;
     }
 
@@ -431,7 +398,7 @@
 
       setLoading(true, 'Connecting to Dropin session...');
 
-      const maxAttempts = 3;
+      const maxAttempts = 15;
       let targetUrl = '';
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -450,7 +417,11 @@
               const timeoutId = setTimeout(() => controller.abort(), 5000);
 
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
-                signal: controller.signal 
+                signal: controller.signal,
+                headers: {
+                  'Bypass-Tunnel-Reminder': 'true',
+                  'ngrok-skip-browser-warning': '69420'
+                }
               });
               clearTimeout(timeoutId);
 
@@ -472,7 +443,7 @@
           }
 
           if (attempt < maxAttempts) {
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, 2000));
           }
         } catch(e) {}
       }
@@ -482,7 +453,12 @@
       if (targetUrl) {
         try {
             const base = targetUrl.split('?')[0];
-            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`);
+            const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, {
+              headers: {
+                'Bypass-Tunnel-Reminder': 'true',
+                'ngrok-skip-browser-warning': '69420'
+              }
+            });
             if (testRes.ok) {
                 const files = await testRes.json();
                 displayFiles(pin, targetUrl, files);
@@ -518,7 +494,13 @@
               const base = newestUrl.split('?')[0];
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 6000);
-              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, { signal: controller.signal });
+              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, {
+                signal: controller.signal,
+                headers: {
+                  'Bypass-Tunnel-Reminder': 'true',
+                  'ngrok-skip-browser-warning': '69420'
+                }
+              });
               clearTimeout(timeoutId);
               
               if (testRes.ok) {

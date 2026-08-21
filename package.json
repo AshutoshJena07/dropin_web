@@ -6,6 +6,9 @@
   "scripts": {
     "start": "serve ."
   },
+  "dependencies": {
+    "@vercel/kv": "^3.0.0"
+  },
   "keywords": ["file-transfer", "dropin", "airdrop", "p2p"],
   "author": "Ashutosh Jena",
   "license": "MIT"
