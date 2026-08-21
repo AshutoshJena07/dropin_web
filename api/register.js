@@ -1,10 +1,7 @@
-const { Redis } = require('@upstash/redis');
+const Redis = require('ioredis');
 
-// Initialize Upstash Redis with fallback for different Vercel environment variables
-const kv = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
-});
+// Initialize Redis client using REDIS_URL from Vercel environment
+const redisClient = new Redis(process.env.REDIS_URL || process.env.KV_URL || process.env.UPSTASH_REDIS_REST_URL);
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -24,7 +21,7 @@ module.exports = async function handler(req, res) {
     const { pin } = req.body || req.query;
     if (pin) {
       const cleanPin = pin.trim().toUpperCase();
-      await kv.del(`session:${cleanPin}`);
+      await redisClient.del(`session:${cleanPin}`);
     }
     return res.status(200).json({ success: true, message: 'Session removed' });
   }
@@ -44,7 +41,7 @@ module.exports = async function handler(req, res) {
     const cleanPin = pin.trim().toUpperCase();
     
     // Store in Redis with an expiration of 24 hours (86400 seconds)
-    await kv.set(`session:${cleanPin}`, { url, createdAt: Date.now() }, { ex: 86400 });
+    await redisClient.set(`session:${cleanPin}`, JSON.stringify({ url, createdAt: Date.now() }), 'EX', 86400);
 
     return res.status(200).json({
       success: true,

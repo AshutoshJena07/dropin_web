@@ -1,10 +1,7 @@
-const { Redis } = require('@upstash/redis');
+const Redis = require('ioredis');
 
-// Initialize Upstash Redis with fallback for different Vercel environment variables
-const kv = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
-});
+// Initialize Redis client using REDIS_URL from Vercel environment
+const redisClient = new Redis(process.env.REDIS_URL || process.env.KV_URL || process.env.UPSTASH_REDIS_REST_URL);
 
 module.exports = async function handler(req, res) {
   // CORS Headers
@@ -34,11 +31,13 @@ module.exports = async function handler(req, res) {
     const cleanPin = pin.trim().toUpperCase();
     
     // Retrieve from Redis
-    const session = await kv.get(`session:${cleanPin}`);
+    const sessionStr = await redisClient.get(`session:${cleanPin}`);
 
-    if (!session) {
+    if (!sessionStr) {
       return res.status(404).json({ error: 'Session not found' });
     }
+
+    const session = JSON.parse(sessionStr);
 
     return res.status(200).json({
       success: true,

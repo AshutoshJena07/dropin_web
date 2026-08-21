@@ -7,7 +7,7 @@
     "start": "serve ."
   },
   "dependencies": {
-    "@upstash/redis": "^1.31.3"
+    "ioredis": "^5.3.2"
   },
   "keywords": ["file-transfer", "dropin", "airdrop", "p2p"],
   "author": "Ashutosh Jena",
