@@ -491,8 +491,9 @@
             }
         } catch(e) {}
         
-        // Fallback if Vercel UI fetch completely fails
-        window.location.href = targetUrl;
+        // If we reach here, the tunnel URL is currently unreachable or returning HTML error pages.
+        statusMsg.className = 'status-msg error';
+        statusMsg.textContent = 'Stream disconnected. Trying to reconnect...';
       } else {
         statusMsg.className = 'status-msg error';
         statusMsg.textContent = 'Session not found. Make sure Dropin is actively sharing on your phone.';
