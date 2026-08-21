@@ -447,7 +447,7 @@
             try {
               const base = item.url.split('?')[0];
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 2000);
+              const timeoutId = setTimeout(() => controller.abort(), 5000);
 
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
                 signal: controller.signal 
@@ -517,7 +517,7 @@
             if (newestUrl !== currentTargetUrl) {
               const base = newestUrl.split('?')[0];
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 3000);
+              const timeoutId = setTimeout(() => controller.abort(), 6000);
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, { signal: controller.signal });
               clearTimeout(timeoutId);
               
