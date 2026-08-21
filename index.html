@@ -303,12 +303,11 @@
 
     pinInputs.forEach((input, index) => {
       input.addEventListener('input', (e) => {
-        const val = e.target.value.toUpperCase();
+        const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
         e.target.value = val;
         if (val && index < pinInputs.length - 1) {
-          pinInputs[index + 1].focus();
+          setTimeout(() => pinInputs[index + 1].focus(), 10);
         }
-        checkAutoSubmit();
       });
 
       input.addEventListener('keydown', (e) => {
@@ -347,7 +346,6 @@
             pinInputs[i].value = text[i] || '';
           }
           pinInputs[5].focus();
-          checkAutoSubmit();
         }
       });
     });
@@ -356,12 +354,6 @@
       let pin = '';
       pinInputs.forEach(i => pin += i.value.trim());
       return pin.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    }
-
-    function checkAutoSubmit() {
-      if (getEnteredPin().length === 6) {
-        connectSession();
-      }
     }
 
     function setLoading(isLoading, text) {
