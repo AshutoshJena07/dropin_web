@@ -8,18 +8,13 @@ module.exports = {
   setSession: (pin, data) => {
     const cleanPin = pin.trim().toUpperCase();
     global._dropinSessions.set(cleanPin, {
-      ...data,
-      expiresAt: Date.now() + 1000 * 60 * 30 // 30 minutes TTL
+      ...data
     });
   },
   getSession: (pin) => {
     const cleanPin = pin.trim().toUpperCase();
     const session = global._dropinSessions.get(cleanPin);
     if (!session) return null;
-    if (Date.now() > session.expiresAt) {
-      global._dropinSessions.delete(cleanPin);
-      return null;
-    }
     return session;
   },
   removeSession: (pin) => {
