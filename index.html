@@ -400,6 +400,14 @@
 
       const maxAttempts = 15;
       let targetUrl = '';
+      
+      const debugDiv = document.getElementById('debugLog') || document.createElement('div');
+      debugDiv.id = 'debugLog';
+      debugDiv.style.cssText = 'position:fixed; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.8); color:lime; font-family:monospace; font-size:10px; padding:10px; z-index:9999; max-height:150px; overflow-y:auto; word-break:break-all; text-align:left;';
+      document.body.appendChild(debugDiv);
+      const log = (msg) => { debugDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; debugDiv.scrollTop = debugDiv.scrollHeight; };
+      
+      log(`Starting connection for PIN: ${pin}`);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
@@ -407,7 +415,9 @@
             statusMsg.textContent = `Finding stream (Attempt ${attempt}/${maxAttempts})...`;
           }
 
+          log(`Attempt ${attempt}: Fetching candidates...`);
           const candidates = await fetchRelayCandidates(pin);
+          log(`Attempt ${attempt}: Found ${candidates.length} candidates: ${JSON.stringify(candidates)}`);
 
           // 1. Try direct reachability on candidate streams (Local Hotspot/Wi-Fi or Tunnel)
           for (const item of candidates) {
@@ -416,6 +426,7 @@
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 5000);
 
+              log(`Testing candidate: ${base}/api/files?token=${pin}`);
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
                 signal: controller.signal,
                 headers: {
@@ -424,28 +435,36 @@
                 }
               });
               clearTimeout(timeoutId);
+              
+              log(`Test result for ${base}: status=${testRes.status} ok=${testRes.ok}`);
 
               if (testRes.ok) {
                 targetUrl = item.url;
                 const files = await testRes.json();
+                log(`Successfully parsed ${files.length} files from ${base}`);
                 displayFiles(pin, targetUrl, files);
                 setLoading(false);
                 startPolling(pin, targetUrl);
                 return;
               }
-            } catch(e) {}
+            } catch(e) {
+                log(`Fetch failed for candidate: ${e.message}`);
+            }
           }
 
           if (attempt < maxAttempts) {
             await new Promise(r => setTimeout(r, 2000));
           }
-        } catch(e) {}
+        } catch(e) {
+            log(`Outer loop error: ${e.message}`);
+        }
+      }
 
       // If we reach here, no candidate was successfully reached
       setLoading(false);
       statusMsg.className = 'status-msg error';
       statusMsg.textContent = 'Stream disconnected or unreachable. Make sure the sender is actively sharing and has internet connection.';
-
+      log(`Failed after 15 attempts.`);
     }
 
     let pollInterval = null;
