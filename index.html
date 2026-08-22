@@ -391,145 +391,177 @@
       setLoading(true, 'Connecting to Dropin session...');
 
       const maxAttempts = 15;
-      let targetUrl = '';
-      
-      const debugDiv = document.getElementById('debugLog') || document.createElement('div');
-      debugDiv.id = 'debugLog';
-      debugDiv.style.cssText = 'position:fixed; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.8); color:lime; font-family:monospace; font-size:10px; padding:10px; z-index:9999; max-height:150px; overflow-y:auto; word-break:break-all; text-align:left;';
-      document.body.appendChild(debugDiv);
-      const log = (msg) => { debugDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; debugDiv.scrollTop = debugDiv.scrollHeight; };
-      
-      log(`Starting connection for PIN: ${pin}`);
-
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          if (attempt > 1) {
-            statusMsg.textContent = `Finding stream (Attempt ${attempt}/${maxAttempts})...`;
-          }
-
-          log(`Attempt ${attempt}: Fetching candidates...`);
-          const rawCandidates = await fetchRelayCandidates(pin);
-          const candidates = [];
-          
-          for (const raw of rawCandidates) {
-            if (raw.url.includes(',')) {
-              raw.url.split(',').forEach(u => {
-                if (u.trim().length > 0) candidates.push({ url: u.trim(), time: raw.time });
-              });
-            } else {
-              candidates.push(raw);
-            }
-          }
-
-          log(`Attempt ${attempt}: Found ${candidates.length} candidates: ${JSON.stringify(candidates)}`);
-
-          // 1. Try direct reachability on candidate streams (Local Hotspot/Wi-Fi or Tunnel)
-          for (const item of candidates) {
-            if (item.url.startsWith("error:")) {
-              log(`Diagnostic Error from Android: ${item.url}`);
-              continue; // Skip error items
-            }
-
-            try {
-              const base = item.url.split('?')[0];
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-              log(`Testing candidate: ${base}/api/files?token=${pin}`);
-              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
-                signal: controller.signal,
-                headers: {
-                  'Bypass-Tunnel-Reminder': 'true',
-                  'ngrok-skip-browser-warning': '69420'
-                }
-              });
-              clearTimeout(timeoutId);
-              
-              log(`Test result for ${base}: status=${testRes.status} ok=${testRes.ok}`);
-
-              if (testRes.ok) {
-                targetUrl = item.url;
-                const files = await testRes.json();
-                log(`Successfully parsed ${files.length} files from ${base}`);
-                displayFiles(pin, targetUrl, files);
-                setLoading(false);
-                startPolling(pin, targetUrl);
-                return;
-              }
-            } catch(e) {
-                log(`Fetch failed for candidate: ${e.message}`);
-            }
-          }
-
-          if (attempt < maxAttempts) {
-            await new Promise(r => setTimeout(r, 2000));
-          }
-        } catch(e) {
-            log(`Outer loop error: ${e.message}`);
-        }
+        statusMsg.textContent = 'Please enter a valid 6-digit PIN.';
+        return;
       }
 
-      // If we reach here, no candidate was successfully reached
-      setLoading(false);
-      statusMsg.className = 'status-msg error';
-      statusMsg.textContent = 'Stream disconnected or unreachable. Make sure the sender is actively sharing and has internet connection.';
-      log(`Failed after 15 attempts.`);
-    }
-
-    let pollInterval = null;
-    let currentPin = '';
-    let currentTargetUrl = '';
-
-    function startPolling(pin, initialUrl) {
       currentPin = pin;
-      currentTargetUrl = initialUrl;
-      if (pollInterval) clearInterval(pollInterval);
-      
-      pollInterval = setInterval(async () => {
-        try {
-          const rawCandidates = await fetchRelayCandidates(currentPin);
-          const candidates = [];
-          for (const raw of rawCandidates) {
-            if (raw.url.includes(',')) {
-              raw.url.split(',').forEach(u => {
-                if (u.trim().length > 0) candidates.push({ url: u.trim(), time: raw.time });
-              });
-            } else {
-              candidates.push(raw);
-            }
-          }
+      setLoading(true);
+      statusMsg.className = 'status-msg success';
+      statusMsg.textContent = 'Initiating Secure P2P Connection...';
+      log(`Starting WebRTC connection for PIN: ${pin}`);
 
-          if (candidates.length > 0) {
-            // Find first valid candidate
-            const newestUrl = candidates.find(c => !c.url.startsWith("error:"))?.url;
-            if (newestUrl && newestUrl !== currentTargetUrl) {
-              const base = newestUrl.split('?')[0];
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 10000);
-              const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, {
-                signal: controller.signal,
-                headers: {
-                  'Bypass-Tunnel-Reminder': 'true',
-                  'ngrok-skip-browser-warning': '69420'
-                }
-              });
-              clearTimeout(timeoutId);
-              
-              if (testRes.ok) {
-                currentTargetUrl = newestUrl;
-                const files = await testRes.json();
-                displayFiles(currentPin, currentTargetUrl, files);
-              }
-            }
-          }
-        } catch(e) {}
-      }, 5000);
+      try {
+          setupWebRTC();
+          
+          // Create Offer
+          const offer = await peerConnection.createOffer();
+          await peerConnection.setLocalDescription(offer);
+          log('Created SDP Offer');
+          
+          await postToVercel('action=setOffer', { offer });
+          log('Offer sent to Signaling Server');
+          
+          startSignalingPolling();
+      } catch (err) {
+          log(`Connection error: ${err.message}`);
+          setLoading(false);
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = 'Connection failed. Please try again.';
+      }
     }
 
-    function displayFiles(pin, targetUrl, files) {
+    function setupWebRTC() {
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+        peerConnection = new RTCPeerConnection(configuration);
+
+        dataChannel = peerConnection.createDataChannel('fileTransfer');
+        setupDataChannel(dataChannel);
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                log('Sending ICE Candidate');
+                postToVercel('action=addCandidate&role=web', { candidate: event.candidate });
+            }
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+            log(`Connection state: ${peerConnection.connectionState}`);
+            if (peerConnection.connectionState === 'connected') {
+                isConnected = true;
+                setLoading(false);
+                statusMsg.textContent = 'Connected Peer-to-Peer!';
+            } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+                log('Disconnected from peer.');
+            }
+        };
+    }
+
+    function setupDataChannel(dc) {
+        dc.binaryType = 'arraybuffer';
+        
+        dc.onopen = () => log('DataChannel is open and ready.');
+        dc.onclose = () => log('DataChannel is closed.');
+        
+        dc.onmessage = (event) => {
+            if (typeof event.data === 'string') {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'file_start') {
+                        log(`Incoming file: ${msg.name} (${msg.size} bytes)`);
+                        fileBuffers[msg.fileId] = {
+                            name: msg.name,
+                            size: msg.size,
+                            received: 0,
+                            chunks: []
+                        };
+                        updateDownloadProgress(msg.fileId, 0, msg.size);
+                    } else if (msg.type === 'file_end') {
+                        log(`File transfer complete: ${msg.fileId}`);
+                        saveFile(msg.fileId);
+                    }
+                } catch (e) {
+                    log(`Unknown text message received: ${event.data}`);
+                }
+            } else {
+                // Binary chunk
+                const fileId = Object.keys(fileBuffers).find(id => fileBuffers[id].received < fileBuffers[id].size);
+                if (fileId) {
+                    const buffer = fileBuffers[fileId];
+                    buffer.chunks.push(event.data);
+                    buffer.received += event.data.byteLength;
+                    updateDownloadProgress(fileId, buffer.received, buffer.size);
+                }
+            }
+        };
+    }
+    
+    function updateDownloadProgress(fileId, received, total) {
+        const btn = document.getElementById(`btn-${fileId}`);
+        if (btn) {
+            const percent = Math.round((received / total) * 100);
+            btn.textContent = `DOWNLOADING ${percent}%`;
+        }
+    }
+
+    function saveFile(fileId) {
+        const buffer = fileBuffers[fileId];
+        if (!buffer) return;
+        
+        const blob = new Blob(buffer.chunks);
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = buffer.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        const btn = document.getElementById(`btn-${fileId}`);
+        if (btn) {
+            btn.textContent = 'DOWNLOADED';
+            btn.style.background = '#1b5e20';
+            btn.style.opacity = '1';
+            btn.disabled = false;
+        }
+        
+        delete fileBuffers[fileId];
+    }
+
+    function startSignalingPolling() {
+        let answerReceived = false;
+        let processedCandidates = 0;
+        let metadataLoaded = false;
+
+        signalingInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/webrtc?pin=${currentPin}`);
+                const data = await res.json();
+                
+                if (data.metadata && !metadataLoaded) {
+                    metadataLoaded = true;
+                    displayFiles(currentPin, data.metadata);
+                }
+
+                if (!answerReceived && data.answer) {
+                    log('Received SDP Answer');
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    answerReceived = true;
+                }
+
+                if (data.candidates_android && data.candidates_android.length > processedCandidates) {
+                    for (let i = processedCandidates; i < data.candidates_android.length; i++) {
+                        log('Received Android ICE Candidate');
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidates_android[i]));
+                    }
+                    processedCandidates = data.candidates_android.length;
+                }
+            } catch (err) {
+                log(`Polling error: ${err.message}`);
+            }
+        }, 2000);
+    }
+
+    function displayFiles(pin, files) {
       pinCard.style.display = 'none';
       filesCard.style.display = 'block';
-      pinSub.textContent = `Active stream for PIN: ${pin}`;
+      pinSub.textContent = `Active secure stream for PIN: ${pin}`;
       fileListContainer.innerHTML = '';
 
       if (!files || files.length === 0) {
@@ -537,7 +569,6 @@
         return;
       }
 
-      const base = targetUrl.split('?')[0];
       files.forEach(f => {
         const item = document.createElement('div');
         item.className = 'file-item';
@@ -557,52 +588,22 @@
         info.appendChild(size);
 
         const btn = document.createElement('button');
+        btn.id = `btn-${f.id}`;
         btn.className = 'dl-btn';
         btn.style.border = 'none';
         btn.style.cursor = 'pointer';
         btn.textContent = 'DOWNLOAD';
         
-        btn.onclick = async () => {
-          try {
-            btn.textContent = 'DOWNLOADING...';
-            btn.style.opacity = '0.5';
-            btn.disabled = true;
-            
-            const url = `${base}/download?id=${encodeURIComponent(f.id)}&token=${encodeURIComponent(pin)}`;
-            const response = await fetch(url, {
-              headers: {
-                'Bypass-Tunnel-Reminder': 'true',
-                'ngrok-skip-browser-warning': '69420'
-              }
-            });
-            
-            if (!response.ok) throw new Error('Download failed');
-            
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = f.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-            
-            btn.textContent = 'DOWNLOADED';
-            btn.style.background = '#1b5e20';
-          } catch(err) {
-            console.error(err);
-            btn.textContent = 'FAILED';
-            btn.style.background = '#c62828';
-          } finally {
-            setTimeout(() => {
-              btn.textContent = 'DOWNLOAD';
-              btn.style.background = 'var(--dark)';
-              btn.style.opacity = '1';
-              btn.disabled = false;
-            }, 3000);
+        btn.onclick = () => {
+          if (!isConnected || dataChannel.readyState !== 'open') {
+              alert("Connection not fully established yet. Please wait a moment.");
+              return;
           }
+          btn.textContent = 'STARTING...';
+          btn.style.opacity = '0.5';
+          btn.disabled = true;
+          
+          dataChannel.send(JSON.stringify({ type: 'download', fileId: f.id }));
         };
 
         item.appendChild(info);
@@ -612,15 +613,17 @@
     }
 
     function resetView() {
-      if (pollInterval) clearInterval(pollInterval);
-      pollInterval = null;
+      if (signalingInterval) clearInterval(signalingInterval);
+      if (peerConnection) peerConnection.close();
+      
       currentPin = '';
-      currentTargetUrl = '';
+      isConnected = false;
       
       filesCard.style.display = 'none';
       pinCard.style.display = 'block';
       pinInputs.forEach(i => i.value = '');
       statusMsg.textContent = '';
+      debugDiv.innerHTML = '<div>Awaiting connection logs...</div>';
       pinInputs[0].focus();
     }
   </script>
