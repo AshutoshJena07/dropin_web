@@ -458,9 +458,15 @@
       setupDataChannel(dataChannel);
 
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && event.candidate.candidate) {
           log('Discovered local ICE Candidate');
-          postToVercel('action=addCandidate&role=web', { candidate: event.candidate });
+          postToVercel('action=addCandidate&role=web', {
+            candidate: {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid || '0',
+              sdpMLineIndex: event.candidate.sdpMLineIndex !== null ? event.candidate.sdpMLineIndex : 0
+            }
+          });
         }
       };
 
@@ -588,7 +594,11 @@
             // Drain queued ICE Candidates
             for (const cand of pendingRemoteCandidates) {
               log('Applying queued Android ICE Candidate');
-              await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+              try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) {
+                log('Queued candidate error: ' + e.message);
+              }
             }
             pendingRemoteCandidates = [];
           }
@@ -597,12 +607,18 @@
           if (data.candidates_android && data.candidates_android.length > processedCandidates) {
             for (let i = processedCandidates; i < data.candidates_android.length; i++) {
               const cand = data.candidates_android[i];
-              if (isRemoteDescriptionSet) {
-                log('Applying incoming Android ICE Candidate directly');
-                await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-              } else {
-                log('Queueing Android ICE Candidate (Remote Description not set yet)');
-                pendingRemoteCandidates.push(cand);
+              if (cand && cand.candidate) {
+                if (isRemoteDescriptionSet) {
+                  log('Applying incoming Android ICE Candidate directly');
+                  try {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+                  } catch (e) {
+                    log('Direct candidate error: ' + e.message);
+                  }
+                } else {
+                  log('Queueing Android ICE Candidate (Remote Description not set yet)');
+                  pendingRemoteCandidates.push(cand);
+                }
               }
             }
             processedCandidates = data.candidates_android.length;
@@ -651,20 +667,7 @@
         
         btn.onclick = () => {
           if (!dataChannel || dataChannel.readyState !== 'open') {
-            btn.textContent = 'WAITING FOR PHONE...';
-            btn.disabled = true;
-            btn.style.opacity = '0.7';
-            
-            const checkAndSend = () => {
-              if (dataChannel && dataChannel.readyState === 'open') {
-                btn.textContent = 'STARTING...';
-                btn.style.opacity = '0.5';
-                dataChannel.send(JSON.stringify({ type: 'download', fileId: f.id }));
-              } else {
-                setTimeout(checkAndSend, 500);
-              }
-            };
-            checkAndSend();
+            alert("Connecting to phone... please wait a few seconds and try again.");
             return;
           }
           btn.textContent = 'STARTING...';
