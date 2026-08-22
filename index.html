@@ -651,7 +651,20 @@
         
         btn.onclick = () => {
           if (!dataChannel || dataChannel.readyState !== 'open') {
-            alert("Connecting to phone... please wait a few seconds and try again.");
+            btn.textContent = 'WAITING FOR PHONE...';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            
+            const checkAndSend = () => {
+              if (dataChannel && dataChannel.readyState === 'open') {
+                btn.textContent = 'STARTING...';
+                btn.style.opacity = '0.5';
+                dataChannel.send(JSON.stringify({ type: 'download', fileId: f.id }));
+              } else {
+                setTimeout(checkAndSend, 500);
+              }
+            };
+            checkAndSend();
             return;
           }
           btn.textContent = 'STARTING...';
