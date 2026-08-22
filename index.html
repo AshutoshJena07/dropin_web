@@ -24,14 +24,17 @@
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: 'Inter', sans-serif;
+      min-height: 100dvh;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       background-color: var(--bg);
       overflow-x: hidden;
-      padding: 20px;
+      padding: 16px;
       position: relative;
+      box-sizing: border-box;
     }
 
     .blob-bg {
@@ -41,82 +44,113 @@
       width: 100%;
       height: 100%;
       z-index: -1;
-      background: radial-gradient(circle at 20% 30%, var(--dark) 0%, var(--bg) 70%);
+      background: radial-gradient(circle at 20% 25%, rgba(10, 26, 22, 0.95) 0%, var(--bg) 75%);
     }
 
     .glass-card {
-      background: rgba(255, 255, 255, 0.2);
-      backdrop-filter: blur(25px);
-      -webkit-backdrop-filter: blur(25px);
-      border: 1px solid rgba(255, 255, 255, 0.4);
-      border-radius: 36px;
-      padding: 44px 36px;
+      background: rgba(255, 255, 255, 0.32);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 32px;
+      padding: 36px 28px;
       width: 100%;
-      max-width: 520px;
-      box-shadow: 0 40px 90px rgba(0, 0, 0, 0.12);
+      max-width: 480px;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.04);
       text-align: center;
+      box-sizing: border-box;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 12px;
+      }
+      .glass-card {
+        padding: 24px 18px;
+        border-radius: 24px;
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.08);
+      }
     }
 
     .logo-container {
-      width: 68px;
-      height: 68px;
+      width: 58px;
+      height: 58px;
       background: var(--dark);
-      border-radius: 18px;
-      margin: 0 auto 16px auto;
+      border-radius: 16px;
+      margin: 0 auto 14px auto;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 10px 20px rgba(10, 26, 22, 0.15);
+      box-shadow: 0 10px 24px rgba(10, 26, 22, 0.2);
     }
 
     .logo-container svg {
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
       fill: #ffffff;
     }
 
     .brand {
       font-weight: 900;
-      font-size: 2.8rem;
-      letter-spacing: -2px;
+      font-size: 2.2rem;
+      letter-spacing: -1.5px;
       color: var(--dark);
       margin: 0 0 6px 0;
+      line-height: 1.1;
+    }
+
+    @media (max-width: 480px) {
+      .brand {
+        font-size: 1.75rem;
+        letter-spacing: -1px;
+      }
     }
 
     .subtitle {
-      opacity: 0.7;
+      opacity: 0.75;
       color: var(--dark);
       font-weight: 500;
-      font-size: 0.95rem;
-      margin-bottom: 24px;
+      font-size: 0.88rem;
+      line-height: 1.4;
+      margin-bottom: 20px;
+      word-break: break-word;
     }
 
     .pin-container {
       display: flex;
       justify-content: center;
-      gap: 8px;
-      margin-bottom: 24px;
+      align-items: center;
+      gap: clamp(4px, 1.8vw, 8px);
+      margin-bottom: 20px;
+      width: 100%;
+      max-width: 100%;
     }
 
     .pin-digit {
-      width: 48px;
-      height: 60px;
-      background: rgba(255, 255, 255, 0.7);
+      flex: 1;
+      max-width: 48px;
+      min-width: 32px;
+      height: clamp(48px, 14vw, 56px);
+      background: rgba(255, 255, 255, 0.8);
       border: 1.5px solid rgba(10, 26, 22, 0.15);
-      border-radius: 14px;
+      border-radius: 12px;
       color: var(--dark);
-      font-size: 1.6rem;
+      font-size: clamp(1.2rem, 5vw, 1.5rem);
       font-weight: 800;
       text-align: center;
       text-transform: uppercase;
       outline: none;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-sizing: border-box;
+      padding: 0;
     }
 
     .pin-digit:focus {
       border-color: var(--dark);
       background: #ffffff;
-      box-shadow: 0 0 0 3px rgba(10, 26, 22, 0.1);
+      box-shadow: 0 0 0 3px rgba(10, 26, 22, 0.12);
+      transform: translateY(-2px);
     }
 
     .connect-btn {
@@ -125,40 +159,47 @@
       color: #ffffff;
       border: none;
       border-radius: 14px;
-      padding: 14px 20px;
-      font-weight: bold;
-      font-size: 0.95rem;
-      letter-spacing: 0.5px;
+      padding: 13px 18px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      letter-spacing: 0.4px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
       transition: all 0.2s ease;
+      box-shadow: 0 6px 18px rgba(10, 26, 22, 0.15);
     }
 
     .connect-btn:hover:not(:disabled) {
-      opacity: 0.9;
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .connect-btn:active:not(:disabled) {
+      transform: translateY(1px);
     }
 
     .connect-btn:disabled {
-      opacity: 0.5;
+      opacity: 0.55;
       cursor: not-allowed;
     }
 
     .status-msg {
-      margin-top: 16px;
-      font-size: 0.85rem;
+      margin-top: 14px;
+      font-size: 0.82rem;
       font-weight: 600;
-      min-height: 20px;
+      min-height: 18px;
+      line-height: 1.3;
     }
 
     .status-msg.error {
-      color: #c62828;
+      color: #b91c1c;
     }
 
     .status-msg.success {
-      color: #1b5e20;
+      color: #15803d;
     }
 
     /* Files View */
@@ -170,14 +211,16 @@
     .connection-badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
+      gap: 8px;
+      padding: 6px 14px;
       border-radius: 20px;
       font-size: 0.78rem;
       font-weight: 700;
       margin-bottom: 16px;
       background: rgba(10, 26, 22, 0.08);
       color: var(--dark);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
     }
 
     .connection-dot {
@@ -186,6 +229,7 @@
       border-radius: 50%;
       background: #f59e0b;
       animation: pulse 1.5s infinite;
+      flex-shrink: 0;
     }
 
     .connection-dot.connected {
@@ -203,69 +247,149 @@
       50% { opacity: 0.4; transform: scale(0.85); }
     }
 
+    #fileListContainer {
+      max-height: 46vh;
+      overflow-y: auto;
+      margin-bottom: 16px;
+      padding-right: 2px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #fileListContainer::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    #fileListContainer::-webkit-scrollbar-thumb {
+      background: rgba(10, 26, 22, 0.2);
+      border-radius: 4px;
+    }
+
     .file-item {
-      background: rgba(255, 255, 255, 0.65);
-      border: 1px solid rgba(255, 255, 255, 0.8);
-      border-radius: 20px;
-      padding: 16px 20px;
-      margin-top: 14px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.95);
+      border-radius: 16px;
+      padding: 12px 14px;
+      margin-top: 10px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       text-align: left;
-      gap: 12px;
+      box-shadow: 0 4px 12px rgba(10, 26, 22, 0.04);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .file-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(10, 26, 22, 0.07);
+    }
+
+    .file-icon-box {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: rgba(10, 26, 22, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .file-icon-box svg {
+      width: 20px;
+      height: 20px;
+      fill: var(--dark);
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
 
     .file-name {
       color: var(--dark);
-      font-weight: bold;
-      font-size: 0.95rem;
+      font-weight: 700;
+      font-size: 0.88rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       display: block;
-      max-width: 240px;
+      width: 100%;
+      line-height: 1.25;
     }
 
     .file-size {
       color: var(--dark);
       opacity: 0.6;
-      font-size: 0.8rem;
+      font-size: 0.74rem;
       margin-top: 2px;
       display: block;
       font-weight: 600;
     }
 
     .dl-btn {
+      flex-shrink: 0;
       background: var(--dark);
       color: #ffffff;
       border: none;
-      border-radius: 12px;
-      padding: 10px 20px;
-      font-weight: bold;
-      font-size: 0.85rem;
+      border-radius: 11px;
+      padding: 9px 15px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      letter-spacing: 0.3px;
       white-space: nowrap;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(10, 26, 22, 0.12);
     }
 
     .dl-btn:hover:not(:disabled) {
-      opacity: 0.85;
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .dl-btn:active:not(:disabled) {
+      transform: translateY(1px);
     }
 
     .dl-btn:disabled {
       cursor: not-allowed;
     }
 
+    @media (max-width: 380px) {
+      .file-item {
+        padding: 10px 12px;
+        gap: 8px;
+      }
+      .file-icon-box {
+        width: 34px;
+        height: 34px;
+      }
+      .file-icon-box svg {
+        width: 18px;
+        height: 18px;
+      }
+      .file-name {
+        font-size: 0.82rem;
+      }
+      .dl-btn {
+        padding: 8px 12px;
+        font-size: 0.74rem;
+      }
+    }
+
     .footer {
-      position: fixed;
-      bottom: 20px;
       width: 100%;
       text-align: center;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: rgba(10, 26, 22, 0.45);
-      letter-spacing: 1px;
+      letter-spacing: 1.2px;
       font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 20px;
     }
 
     .spinner {
@@ -286,6 +410,7 @@
 <body>
   <div class="blob-bg"></div>
 
+  <!-- PIN Entry Card -->
   <div class="glass-card" id="pinCard">
     <div class="logo-container">
       <svg viewBox="0 0 24 24">
@@ -293,15 +418,15 @@
       </svg>
     </div>
     <h1 class="brand">DROPIN</h1>
-    <p class="subtitle">Your secure asset stream is ready</p>
+    <p class="subtitle">Enter 6-digit PIN to access secure stream</p>
 
     <div class="pin-container">
-      <input type="text" maxlength="1" class="pin-digit" autofocus data-index="0" />
-      <input type="text" maxlength="1" class="pin-digit" data-index="1" />
-      <input type="text" maxlength="1" class="pin-digit" data-index="2" />
-      <input type="text" maxlength="1" class="pin-digit" data-index="3" />
-      <input type="text" maxlength="1" class="pin-digit" data-index="4" />
-      <input type="text" maxlength="1" class="pin-digit" data-index="5" />
+      <input type="text" maxlength="1" class="pin-digit" autofocus data-index="0" inputmode="text" autocomplete="off" />
+      <input type="text" maxlength="1" class="pin-digit" data-index="1" inputmode="text" autocomplete="off" />
+      <input type="text" maxlength="1" class="pin-digit" data-index="2" inputmode="text" autocomplete="off" />
+      <input type="text" maxlength="1" class="pin-digit" data-index="3" inputmode="text" autocomplete="off" />
+      <input type="text" maxlength="1" class="pin-digit" data-index="4" inputmode="text" autocomplete="off" />
+      <input type="text" maxlength="1" class="pin-digit" data-index="5" inputmode="text" autocomplete="off" />
     </div>
 
     <button class="connect-btn" id="connectBtn" onclick="connectSession()">
@@ -314,12 +439,12 @@
 
   <!-- Files Card -->
   <div class="glass-card files-view" id="filesCard">
-    <div class="logo-container" style="width: 50px; height: 50px; margin-bottom: 12px;">
+    <div class="logo-container" style="width: 48px; height: 48px; margin-bottom: 12px;">
       <svg viewBox="0 0 24 24" style="width: 24px; height: 24px;">
         <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
       </svg>
     </div>
-    <h1 class="brand" style="font-size: 2.2rem;">SHARED ASSETS</h1>
+    <h1 class="brand" style="font-size: 1.85rem;">SHARED ASSETS</h1>
     <p class="subtitle" id="pinSub" style="margin-bottom: 12px;"></p>
 
     <div style="text-align: center;">
@@ -329,9 +454,9 @@
       </div>
     </div>
 
-    <div id="fileListContainer" style="max-height: 50vh; overflow-y: auto; margin-bottom: 16px;"></div>
+    <div id="fileListContainer"></div>
 
-    <button class="connect-btn" onclick="resetView()" style="background: rgba(10, 26, 22, 0.15); color: var(--dark); margin-top: 10px;">
+    <button class="connect-btn" onclick="resetView()" style="background: rgba(10, 26, 22, 0.12); color: var(--dark); margin-top: 12px; box-shadow: none;">
       ENTER ANOTHER PIN
     </button>
   </div>
@@ -861,6 +986,22 @@
       }
     }
 
+    function getFileIcon(name) {
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic'].includes(ext)) {
+        return `<svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>`;
+      } else if (['mp4', 'mkv', 'mov', 'avi', 'webm', '3gp'].includes(ext)) {
+        return `<svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>`;
+      } else if (['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(ext)) {
+        return `<svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>`;
+      } else if (['pdf'].includes(ext)) {
+        return `<svg viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zm4.5 2h1v-3h-1v3zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/></svg>`;
+      } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+        return `<svg viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V6h2v2z"/></svg>`;
+      }
+      return `<svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`;
+    }
+
     function displayFiles(pin, files) {
       pinCard.style.display = 'none';
       filesCard.style.display = 'block';
@@ -878,7 +1019,13 @@
         const item = document.createElement('div');
         item.className = 'file-item';
 
+        const iconBox = document.createElement('div');
+        iconBox.className = 'file-icon-box';
+        iconBox.innerHTML = getFileIcon(f.name);
+
         const info = document.createElement('div');
+        info.className = 'file-info';
+
         const name = document.createElement('span');
         name.className = 'file-name';
         name.textContent = f.name;
@@ -886,7 +1033,8 @@
 
         const size = document.createElement('small');
         size.className = 'file-size';
-        size.textContent = `${(f.size / 1048576).toFixed(2)} MB`;
+        const mb = f.size / (1024 * 1024);
+        size.textContent = mb >= 0.01 ? `${mb.toFixed(2)} MB` : `${Math.round(f.size / 1024)} KB`;
 
         info.appendChild(name);
         info.appendChild(size);
@@ -896,12 +1044,13 @@
         btn.className = 'dl-btn';
         btn.textContent = isReady ? 'DOWNLOAD' : (isConnected ? 'DOWNLOAD' : 'WAITING FOR PHONE...');
         btn.disabled = false;
-        btn.style.opacity = isReady ? '1' : '0.8';
+        btn.style.opacity = isReady ? '1' : '0.85';
         
         btn.onclick = () => {
           startDownload(f.id);
         };
 
+        item.appendChild(iconBox);
         item.appendChild(info);
         item.appendChild(btn);
         fileListContainer.appendChild(item);
