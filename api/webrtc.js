@@ -92,13 +92,23 @@ module.exports = async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
       if (action === 'setOffer') {
-        await redisClient.hset(sessionKey, 'offer', JSON.stringify(body.offer));
+        await Promise.all([
+          redisClient.hset(sessionKey, 'offer', JSON.stringify(body.offer)),
+          redisClient.hdel(sessionKey, 'answer'),
+          redisClient.del(androidCandsKey)
+        ]);
         await redisClient.expire(sessionKey, 3600);
       } else if (action === 'setAnswer') {
         await redisClient.hset(sessionKey, 'answer', JSON.stringify(body.answer));
         await redisClient.expire(sessionKey, 3600);
       } else if (action === 'setMetadata') {
-        await redisClient.hset(sessionKey, 'metadata', JSON.stringify(body.metadata));
+        await Promise.all([
+          redisClient.hset(sessionKey, 'metadata', JSON.stringify(body.metadata)),
+          redisClient.hdel(sessionKey, 'offer'),
+          redisClient.hdel(sessionKey, 'answer'),
+          redisClient.del(webCandsKey),
+          redisClient.del(androidCandsKey)
+        ]);
         await redisClient.expire(sessionKey, 3600);
       } else if (action === 'addCandidate') {
         const targetListKey = role === 'android' ? androidCandsKey : webCandsKey;

@@ -352,6 +352,7 @@
     const connText = document.getElementById('connText');
 
     let currentPin = '';
+    let isConnecting = false;
     let isConnected = false;
     let peerConnection = null;
     let dataChannel = null;
@@ -382,6 +383,7 @@
         }
         // Auto connect when the 6th digit is entered
         if (getEnteredPin().length === 6) {
+          input.blur();
           connectSession();
         }
       });
@@ -391,6 +393,8 @@
           pinInputs[index - 1].focus();
           pinInputs[index - 1].value = '';
         } else if (e.key === 'Enter') {
+          e.preventDefault();
+          input.blur();
           connectSession();
         }
       });
@@ -422,17 +426,23 @@
       });
     });
 
-    window.onload = () => {
+    function initFromUrl() {
       const urlParams = new URLSearchParams(window.location.search);
       let token = urlParams.get('token') || urlParams.get('pin');
       if (token && token.length === 6) {
         token = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
         for (let i = 0; i < 6; i++) {
-          pinInputs[i].value = token[i] || '';
+          if (pinInputs[i]) pinInputs[i].value = token[i] || '';
         }
         connectSession();
       }
-    };
+    }
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initFromUrl);
+    } else {
+      initFromUrl();
+    }
 
     function getEnteredPin() {
       let pin = '';
@@ -448,6 +458,30 @@
         statusMsg.className = 'status-msg';
         statusMsg.textContent = text || 'Connecting...';
       }
+    }
+
+    function updateButtonStates() {
+      const isReady = dataChannel && dataChannel.readyState === 'open';
+      document.querySelectorAll('.dl-btn').forEach(btn => {
+        const fileId = btn.id.replace('btn-', '');
+        if (!btn.textContent.includes('DOWNLOADING') && !btn.textContent.includes('DOWNLOADED') && !btn.textContent.includes('STARTING')) {
+          if (isReady) {
+            btn.textContent = 'DOWNLOAD';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+          } else {
+            if (pendingDownloadFileId === fileId) {
+              btn.textContent = 'CONNECTING...';
+              btn.disabled = false;
+              btn.style.opacity = '0.8';
+            } else {
+              btn.textContent = isConnected ? 'DOWNLOAD' : 'WAITING FOR PHONE...';
+              btn.disabled = false;
+              btn.style.opacity = isConnected ? '1' : '0.7';
+            }
+          }
+        }
+      });
     }
 
     async function postToVercel(query, body) {
@@ -472,6 +506,12 @@
         return;
       }
 
+      if (isConnecting && currentPin === pin) {
+        log('Connection already in progress for PIN: ' + pin);
+        return;
+      }
+
+      isConnecting = true;
       currentPin = pin;
       setLoading(true, 'Connecting to peer...');
       statusMsg.className = 'status-msg';
@@ -488,14 +528,19 @@
         
         // 1. Create SDP Offer
         const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
         log('Created SDP Offer');
         
+        // 2. Post Offer to Signaling Server FIRST
         await postToVercel('action=setOffer', { offer });
         log('Offer sent to Signaling Server');
+
+        // 3. Set Local Description to trigger ICE candidate gathering cleanly
+        await peerConnection.setLocalDescription(offer);
+        log('Local SDP Offer set');
         
         startSignalingPolling();
       } catch (err) {
+        isConnecting = false;
         log(`Connection error: ${err.message}`);
         setLoading(false);
         statusMsg.className = 'status-msg error';
@@ -513,8 +558,11 @@
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
           { urls: 'stun:stun.cloudflare.com:3478' },
-          { urls: 'stun:openrelay.metered.ca:80' },
+          { urls: 'stun:stun.services.mozilla.com' },
           {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -530,7 +578,8 @@
             username: 'openrelayproject',
             credential: 'openrelayproject'
           }
-        ]
+        ],
+        iceCandidatePoolSize: 10
       };
       peerConnection = new RTCPeerConnection(configuration);
 
@@ -557,15 +606,19 @@
         log(`PeerConnection state: ${peerConnection.connectionState}`);
         if (peerConnection.connectionState === 'connected') {
           isConnected = true;
+          isConnecting = false;
           setLoading(false);
           statusMsg.className = 'status-msg success';
           statusMsg.textContent = 'Connected Peer-to-Peer!';
           updateBadge('connected', 'P2P Connected (Ready)');
+          updateButtonStates();
         } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
           isConnected = false;
+          isConnecting = false;
           statusMsg.className = 'status-msg error';
           statusMsg.textContent = 'Connection interrupted.';
           updateBadge('failed', 'Connection Failed');
+          updateButtonStates();
         }
       };
 
@@ -573,6 +626,10 @@
         log(`ICE Connection state: ${peerConnection.iceConnectionState}`);
         if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
           updateBadge('connected', 'P2P Connected (Ready)');
+          updateButtonStates();
+        } else if (peerConnection.iceConnectionState === 'failed') {
+          updateBadge('failed', 'Connection Failed');
+          updateButtonStates();
         }
       };
     }
@@ -583,16 +640,12 @@
       dc.onopen = () => {
         log('DataChannel is open and ready');
         isConnected = true;
+        isConnecting = false;
+        setLoading(false);
+        statusMsg.className = 'status-msg success';
+        statusMsg.textContent = 'Connected Peer-to-Peer!';
         updateBadge('connected', 'P2P Connected (Ready)');
-        
-        // Reset all buttons to active state
-        document.querySelectorAll('.dl-btn').forEach(btn => {
-          if (btn.textContent.includes('WAITING') || btn.textContent.includes('CONNECTING')) {
-            btn.textContent = 'DOWNLOAD';
-            btn.disabled = false;
-            btn.style.opacity = '1';
-          }
-        });
+        updateButtonStates();
 
         // Trigger pending download if any
         if (pendingDownloadFileId) {
@@ -605,7 +658,13 @@
       dc.onclose = () => {
         log('DataChannel is closed');
         isConnected = false;
+        isConnecting = false;
         updateBadge('failed', 'Disconnected');
+        updateButtonStates();
+      };
+
+      dc.onerror = (err) => {
+        log('DataChannel error: ' + (err.message || 'unknown error'));
       };
       
       dc.onmessage = (event) => {
@@ -666,7 +725,10 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 10000);
       
       const btn = document.getElementById(`btn-${fileId}`);
       if (btn) {
@@ -683,11 +745,16 @@
       let answerReceived = false;
       let processedCandidates = 0;
       let metadataLoaded = false;
+      let pollCount = 0;
 
       if (signalingInterval) clearInterval(signalingInterval);
 
       signalingInterval = setInterval(async () => {
+        pollCount++;
         try {
+          // Always ensure download buttons reflect current dataChannel state
+          updateButtonStates();
+
           const res = await fetch(`/api/webrtc?pin=${currentPin}`);
           const data = await res.json();
           
@@ -695,6 +762,11 @@
           if (data.metadata && !metadataLoaded) {
             metadataLoaded = true;
             displayFiles(currentPin, data.metadata);
+          }
+
+          if (!data.metadata && pollCount > 10 && !metadataLoaded) {
+            statusMsg.className = 'status-msg';
+            statusMsg.textContent = 'Searching for stream... Ensure Dropin is active on phone.';
           }
 
           // 2. Process Answer when available
@@ -763,8 +835,8 @@
       } else {
         const btn = document.getElementById(`btn-${fileId}`);
         if (btn) {
-          btn.textContent = 'WAITING FOR PHONE...';
-          btn.style.opacity = '0.7';
+          btn.textContent = 'CONNECTING...';
+          btn.style.opacity = '0.8';
           btn.disabled = true;
         }
         pendingDownloadFileId = fileId;
@@ -781,6 +853,8 @@
         fileListContainer.innerHTML = '<p style="opacity:0.5; text-align:center; padding:20px;">No assets shared.</p>';
         return;
       }
+
+      const isReady = dataChannel && dataChannel.readyState === 'open';
 
       files.forEach(f => {
         const item = document.createElement('div');
@@ -802,9 +876,9 @@
         const btn = document.createElement('button');
         btn.id = `btn-${f.id}`;
         btn.className = 'dl-btn';
-        btn.textContent = (dataChannel && dataChannel.readyState === 'open') ? 'DOWNLOAD' : 'WAITING FOR PHONE...';
-        btn.disabled = !(dataChannel && dataChannel.readyState === 'open');
-        btn.style.opacity = (dataChannel && dataChannel.readyState === 'open') ? '1' : '0.7';
+        btn.textContent = isReady ? 'DOWNLOAD' : (isConnected ? 'DOWNLOAD' : 'WAITING FOR PHONE...');
+        btn.disabled = false;
+        btn.style.opacity = isReady ? '1' : '0.8';
         
         btn.onclick = () => {
           startDownload(f.id);
@@ -814,6 +888,8 @@
         item.appendChild(btn);
         fileListContainer.appendChild(item);
       });
+
+      updateButtonStates();
     }
 
     function resetView() {
@@ -823,6 +899,7 @@
       }
       
       currentPin = '';
+      isConnecting = false;
       isConnected = false;
       isRemoteDescriptionSet = false;
       pendingRemoteCandidates = [];
