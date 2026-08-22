@@ -556,11 +556,54 @@
         info.appendChild(name);
         info.appendChild(size);
 
-        const btn = document.createElement('a');
+        const btn = document.createElement('button');
         btn.className = 'dl-btn';
-        btn.href = `${base}/download?id=${encodeURIComponent(f.id)}&token=${encodeURIComponent(pin)}`;
-        btn.download = f.name;
+        btn.style.border = 'none';
+        btn.style.cursor = 'pointer';
         btn.textContent = 'DOWNLOAD';
+        
+        btn.onclick = async () => {
+          try {
+            btn.textContent = 'DOWNLOADING...';
+            btn.style.opacity = '0.5';
+            btn.disabled = true;
+            
+            const url = `${base}/download?id=${encodeURIComponent(f.id)}&token=${encodeURIComponent(pin)}`;
+            const response = await fetch(url, {
+              headers: {
+                'Bypass-Tunnel-Reminder': 'true',
+                'ngrok-skip-browser-warning': '69420'
+              }
+            });
+            
+            if (!response.ok) throw new Error('Download failed');
+            
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = f.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+            
+            btn.textContent = 'DOWNLOADED';
+            btn.style.background = '#1b5e20';
+          } catch(err) {
+            console.error(err);
+            btn.textContent = 'FAILED';
+            btn.style.background = '#c62828';
+          } finally {
+            setTimeout(() => {
+              btn.textContent = 'DOWNLOAD';
+              btn.style.background = 'var(--dark)';
+              btn.style.opacity = '1';
+              btn.disabled = false;
+            }, 3000);
+          }
+        };
 
         item.appendChild(info);
         item.appendChild(btn);
