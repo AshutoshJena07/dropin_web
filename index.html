@@ -305,14 +305,20 @@
       input.addEventListener('input', (e) => {
         const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
         e.target.value = val;
+        // Shift focus to next input
         if (val && index < pinInputs.length - 1) {
-          setTimeout(() => pinInputs[index + 1].focus(), 10);
+          pinInputs[index + 1].focus();
+        }
+        // Auto connect when the last digit is entered
+        if (getEnteredPin().length === 6) {
+            connectSession();
         }
       });
 
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Backspace' && !e.target.value && index > 0) {
           pinInputs[index - 1].focus();
+          pinInputs[index - 1].value = '';
         } else if (e.key === 'Enter') {
           connectSession();
         }
@@ -322,20 +328,15 @@
         e.preventDefault();
         const raw = (e.clipboardData || window.clipboardData).getData('text').trim();
         
-        // If a full Dropin stream URL was pasted, connect directly
         if (raw.startsWith('http://') || raw.startsWith('https://')) {
           try {
             const urlObj = new URL(raw);
             const tokenParam = urlObj.searchParams.get('token');
             if (tokenParam && tokenParam.length === 6) {
-              for (let i = 0; i < 6; i++) {
-                pinInputs[i].value = tokenParam[i] || '';
-              }
+              window.location.href = `/?pin=${tokenParam}`;
             }
-            window.location.href = raw;
             return;
           } catch(err) {
-            window.location.href = raw;
             return;
           }
         }
@@ -345,10 +346,23 @@
           for (let i = 0; i < 6; i++) {
             pinInputs[i].value = text[i] || '';
           }
-          pinInputs[5].focus();
+          connectSession();
         }
       });
     });
+
+    window.onload = () => {
+        // Auto-connect if PIN is in URL parameters (e.g. from QR code scan)
+        const urlParams = new URLSearchParams(window.location.search);
+        let token = urlParams.get('token') || urlParams.get('pin');
+        if (token && token.length === 6) {
+            token = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            for (let i = 0; i < 6; i++) {
+                pinInputs[i].value = token[i] || '';
+            }
+            connectSession();
+        }
+    };
 
     function getEnteredPin() {
       let pin = '';
@@ -366,32 +380,11 @@
       }
     }
 
-    async function fetchRelayCandidates(cleanPin) {
-      const validMessages = [];
-      try {
-        const res = await fetch(`/api/resolve?pin=${encodeURIComponent(cleanPin)}`, { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.url) {
-            validMessages.push({ url: data.url, time: Date.now() / 1000 });
-          }
-        }
-      } catch(e) {}
-      return validMessages;
-    }
-
     async function connectSession() {
       const pin = getEnteredPin();
       if (pin.length < 6) {
         statusMsg.className = 'status-msg error';
         statusMsg.textContent = 'Please enter all 6 digits of the PIN';
-        return;
-      }
-
-      setLoading(true, 'Connecting to Dropin session...');
-
-      const maxAttempts = 15;
-        statusMsg.textContent = 'Please enter a valid 6-digit PIN.';
         return;
       }
 
