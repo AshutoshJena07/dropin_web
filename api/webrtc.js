@@ -24,62 +24,110 @@ module.exports = async function handler(req, res) {
   }
 
   const cleanPin = pin.trim().toUpperCase();
-  const sessionKey = `webrtc:${cleanPin}`;
+  const sessionKey = `webrtc:${cleanPin}:session`;
+  const webCandsKey = `webrtc:${cleanPin}:cands_web`;
+  const androidCandsKey = `webrtc:${cleanPin}:cands_android`;
+  const legacyKey = `webrtc:${cleanPin}`;
 
   if (req.method === 'GET') {
-    const rawData = await redisClient.get(sessionKey);
-    let sessionData = {};
-    if (rawData) {
-      try {
-        sessionData = JSON.parse(rawData);
-      } catch (e) {}
+    try {
+      const [sessionMap, webCands, androidCands] = await Promise.all([
+        redisClient.hgetall(sessionKey),
+        redisClient.lrange(webCandsKey, 0, -1),
+        redisClient.lrange(androidCandsKey, 0, -1)
+      ]);
+
+      let offer = null;
+      let answer = null;
+      let metadata = null;
+      let candidates_web = [];
+      let candidates_android = [];
+
+      if (sessionMap && Object.keys(sessionMap).length > 0) {
+        if (sessionMap.offer) {
+          try { offer = JSON.parse(sessionMap.offer); } catch (e) { offer = sessionMap.offer; }
+        }
+        if (sessionMap.answer) {
+          try { answer = JSON.parse(sessionMap.answer); } catch (e) { answer = sessionMap.answer; }
+        }
+        if (sessionMap.metadata) {
+          try { metadata = JSON.parse(sessionMap.metadata); } catch (e) { metadata = sessionMap.metadata; }
+        }
+        candidates_web = (webCands || []).map(c => {
+          try { return JSON.parse(c); } catch (e) { return c; }
+        });
+        candidates_android = (androidCands || []).map(c => {
+          try { return JSON.parse(c); } catch (e) { return c; }
+        });
+      } else {
+        // Fallback check for legacy single-key format if present
+        const rawData = await redisClient.get(legacyKey);
+        if (rawData) {
+          try {
+            const legacyData = JSON.parse(rawData);
+            offer = legacyData.offer || null;
+            answer = legacyData.answer || null;
+            metadata = legacyData.metadata || null;
+            candidates_web = legacyData.candidates_web || [];
+            candidates_android = legacyData.candidates_android || [];
+          } catch (e) {}
+        }
+      }
+
+      return res.status(200).json({
+        offer,
+        answer,
+        metadata,
+        candidates_web,
+        candidates_android
+      });
+    } catch (err) {
+      console.error('GET error:', err);
+      return res.status(500).json({ error: err.message });
     }
-    return res.status(200).json(sessionData);
   }
 
   if (req.method === 'POST') {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    
-    // Acquire a simple lock or just use get+set (optimistic approach is fine for this low-concurrency use case)
-    const rawData = await redisClient.get(sessionKey);
-    let sessionData = {
-      offer: null,
-      answer: null,
-      candidates_web: [],
-      candidates_android: [],
-      metadata: null,
-      createdAt: Date.now()
-    };
-    
-    if (rawData) {
-      try {
-        sessionData = { ...sessionData, ...JSON.parse(rawData) };
-      } catch (e) {}
-    }
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    if (action === 'setOffer') {
-      sessionData.offer = body.offer;
-    } else if (action === 'setAnswer') {
-      sessionData.answer = body.answer;
-    } else if (action === 'addCandidate') {
-      if (role === 'web') {
-        sessionData.candidates_web.push(body.candidate);
-      } else if (role === 'android') {
-        sessionData.candidates_android.push(body.candidate);
+      if (action === 'setOffer') {
+        await redisClient.hset(sessionKey, 'offer', JSON.stringify(body.offer));
+        await redisClient.expire(sessionKey, 3600);
+      } else if (action === 'setAnswer') {
+        await redisClient.hset(sessionKey, 'answer', JSON.stringify(body.answer));
+        await redisClient.expire(sessionKey, 3600);
+      } else if (action === 'setMetadata') {
+        await redisClient.hset(sessionKey, 'metadata', JSON.stringify(body.metadata));
+        await redisClient.expire(sessionKey, 3600);
+      } else if (action === 'addCandidate') {
+        const targetListKey = role === 'android' ? androidCandsKey : webCandsKey;
+        await redisClient.rpush(targetListKey, JSON.stringify(body.candidate));
+        await redisClient.expire(targetListKey, 3600);
+        await redisClient.expire(sessionKey, 3600);
+      } else {
+        return res.status(400).json({ error: 'Invalid action' });
       }
-    } else if (action === 'setMetadata') {
-      sessionData.metadata = body.metadata;
-    } else {
-      return res.status(400).json({ error: 'Invalid action' });
-    }
 
-    await redisClient.set(sessionKey, JSON.stringify(sessionData), 'EX', 3600); // 1 hour expiry
-    return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      console.error('POST error:', err);
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   if (req.method === 'DELETE') {
-    await redisClient.del(sessionKey);
-    return res.status(200).json({ success: true });
+    try {
+      await Promise.all([
+        redisClient.del(legacyKey),
+        redisClient.del(sessionKey),
+        redisClient.del(webCandsKey),
+        redisClient.del(androidCandsKey)
+      ]);
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   return res.status(405).json({ error: 'Method Not Allowed' });
