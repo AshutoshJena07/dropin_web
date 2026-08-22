@@ -408,15 +408,32 @@
           }
 
           log(`Attempt ${attempt}: Fetching candidates...`);
-          const candidates = await fetchRelayCandidates(pin);
+          const rawCandidates = await fetchRelayCandidates(pin);
+          const candidates = [];
+          
+          for (const raw of rawCandidates) {
+            if (raw.url.includes(',')) {
+              raw.url.split(',').forEach(u => {
+                if (u.trim().length > 0) candidates.push({ url: u.trim(), time: raw.time });
+              });
+            } else {
+              candidates.push(raw);
+            }
+          }
+
           log(`Attempt ${attempt}: Found ${candidates.length} candidates: ${JSON.stringify(candidates)}`);
 
           // 1. Try direct reachability on candidate streams (Local Hotspot/Wi-Fi or Tunnel)
           for (const item of candidates) {
+            if (item.url.startsWith("error:")) {
+              log(`Diagnostic Error from Android: ${item.url}`);
+              continue; // Skip error items
+            }
+
             try {
               const base = item.url.split('?')[0];
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 5000);
+              const timeoutId = setTimeout(() => controller.abort(), 10000);
 
               log(`Testing candidate: ${base}/api/files?token=${pin}`);
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(pin)}`, { 
@@ -470,13 +487,25 @@
       
       pollInterval = setInterval(async () => {
         try {
-          const candidates = await fetchRelayCandidates(currentPin);
+          const rawCandidates = await fetchRelayCandidates(currentPin);
+          const candidates = [];
+          for (const raw of rawCandidates) {
+            if (raw.url.includes(',')) {
+              raw.url.split(',').forEach(u => {
+                if (u.trim().length > 0) candidates.push({ url: u.trim(), time: raw.time });
+              });
+            } else {
+              candidates.push(raw);
+            }
+          }
+
           if (candidates.length > 0) {
-            const newestUrl = candidates[0].url;
-            if (newestUrl !== currentTargetUrl) {
+            // Find first valid candidate
+            const newestUrl = candidates.find(c => !c.url.startsWith("error:"))?.url;
+            if (newestUrl && newestUrl !== currentTargetUrl) {
               const base = newestUrl.split('?')[0];
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 6000);
+              const timeoutId = setTimeout(() => controller.abort(), 10000);
               const testRes = await fetch(`${base}/api/files?token=${encodeURIComponent(currentPin)}`, {
                 signal: controller.signal,
                 headers: {
