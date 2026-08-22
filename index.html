@@ -528,10 +528,15 @@
         
         // 1. Create SDP Offer
         const offer = await peerConnection.createOffer();
+        const offerPayload = {
+          type: offer.type,
+          sdp: offer.sdp,
+          id: Date.now().toString()
+        };
         log('Created SDP Offer');
         
         // 2. Post Offer to Signaling Server FIRST
-        await postToVercel('action=setOffer', { offer });
+        await postToVercel('action=setOffer', { offer: offerPayload });
         log('Offer sent to Signaling Server');
 
         // 3. Set Local Description to trigger ICE candidate gathering cleanly
@@ -562,7 +567,6 @@
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' },
           { urls: 'stun:stun.cloudflare.com:3478' },
-          { urls: 'stun:stun.services.mozilla.com' },
           {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -579,7 +583,9 @@
             credential: 'openrelayproject'
           }
         ],
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
       };
       peerConnection = new RTCPeerConnection(configuration);
 
@@ -625,9 +631,13 @@
       peerConnection.oniceconnectionstatechange = () => {
         log(`ICE Connection state: ${peerConnection.iceConnectionState}`);
         if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+          isConnected = true;
+          isConnecting = false;
+          setLoading(false);
           updateBadge('connected', 'P2P Connected (Ready)');
           updateButtonStates();
         } else if (peerConnection.iceConnectionState === 'failed') {
+          isConnected = false;
           updateBadge('failed', 'Connection Failed');
           updateButtonStates();
         }
@@ -771,22 +781,30 @@
 
           // 2. Process Answer when available
           if (!answerReceived && data.answer) {
-            answerReceived = true;
             log('Received SDP Answer from Android');
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            isRemoteDescriptionSet = true;
-            log('Remote Description set successfully on Web');
+            try {
+              const rtcAnswer = new RTCSessionDescription({
+                type: data.answer.type || 'answer',
+                sdp: data.answer.sdp || data.answer
+              });
+              await peerConnection.setRemoteDescription(rtcAnswer);
+              answerReceived = true;
+              isRemoteDescriptionSet = true;
+              log('Remote Description set successfully on Web');
 
-            // Drain queued ICE Candidates
-            for (const cand of pendingRemoteCandidates) {
-              log('Applying queued Android ICE Candidate');
-              try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-              } catch (e) {
-                log('Queued candidate error: ' + e.message);
+              // Drain queued ICE Candidates
+              for (const cand of pendingRemoteCandidates) {
+                log('Applying queued Android ICE Candidate');
+                try {
+                  await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+                } catch (e) {
+                  log('Queued candidate error: ' + e.message);
+                }
               }
+              pendingRemoteCandidates = [];
+            } catch (sdpErr) {
+              log('Error setting Remote Description: ' + sdpErr.message);
             }
-            pendingRemoteCandidates = [];
           }
 
           // 3. Process Android ICE candidates
