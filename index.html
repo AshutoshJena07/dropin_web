@@ -301,6 +301,19 @@
     const fileListContainer = document.getElementById('fileListContainer');
     const pinSub = document.getElementById('pinSub');
 
+    let currentPin = '';
+    let isConnected = false;
+    let peerConnection = null;
+    let dataChannel = null;
+    let fileBuffers = {};
+    let signalingInterval = null;
+    let pendingRemoteCandidates = [];
+    let isRemoteDescriptionSet = false;
+
+    function log(msg) {
+      console.log('[Dropin WebRTC]', msg);
+    }
+
     pinInputs.forEach((input, index) => {
       input.addEventListener('input', (e) => {
         const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -309,9 +322,9 @@
         if (val && index < pinInputs.length - 1) {
           pinInputs[index + 1].focus();
         }
-        // Auto connect when the last digit is entered
+        // Auto connect when the 6th digit is entered
         if (getEnteredPin().length === 6) {
-            connectSession();
+          connectSession();
         }
       });
 
@@ -331,7 +344,7 @@
         if (raw.startsWith('http://') || raw.startsWith('https://')) {
           try {
             const urlObj = new URL(raw);
-            const tokenParam = urlObj.searchParams.get('token');
+            const tokenParam = urlObj.searchParams.get('token') || urlObj.searchParams.get('pin');
             if (tokenParam && tokenParam.length === 6) {
               window.location.href = `/?pin=${tokenParam}`;
             }
@@ -352,16 +365,15 @@
     });
 
     window.onload = () => {
-        // Auto-connect if PIN is in URL parameters (e.g. from QR code scan)
-        const urlParams = new URLSearchParams(window.location.search);
-        let token = urlParams.get('token') || urlParams.get('pin');
-        if (token && token.length === 6) {
-            token = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            for (let i = 0; i < 6; i++) {
-                pinInputs[i].value = token[i] || '';
-            }
-            connectSession();
+      const urlParams = new URLSearchParams(window.location.search);
+      let token = urlParams.get('token') || urlParams.get('pin');
+      if (token && token.length === 6) {
+        token = token.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        for (let i = 0; i < 6; i++) {
+          pinInputs[i].value = token[i] || '';
         }
+        connectSession();
+      }
     };
 
     function getEnteredPin() {
@@ -376,7 +388,21 @@
       btnSpinner.style.display = isLoading ? 'block' : 'none';
       if (isLoading) {
         statusMsg.className = 'status-msg';
-        statusMsg.textContent = text || 'Locating stream...';
+        statusMsg.textContent = text || 'Connecting...';
+      }
+    }
+
+    async function postToVercel(query, body) {
+      try {
+        const res = await fetch(`/api/webrtc?pin=${currentPin}&${query}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        return await res.json();
+      } catch (err) {
+        log(`POST Error: ${err.message}`);
+        return null;
       }
     }
 
@@ -389,166 +415,202 @@
       }
 
       currentPin = pin;
-      setLoading(true);
-      statusMsg.className = 'status-msg success';
-      statusMsg.textContent = 'Initiating Secure P2P Connection...';
+      setLoading(true, 'Connecting to peer...');
+      statusMsg.className = 'status-msg';
       log(`Starting WebRTC connection for PIN: ${pin}`);
 
+      // Reset states
+      isRemoteDescriptionSet = false;
+      pendingRemoteCandidates = [];
+
       try {
-          setupWebRTC();
-          
-          // Create Offer
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-          log('Created SDP Offer');
-          
-          await postToVercel('action=setOffer', { offer });
-          log('Offer sent to Signaling Server');
-          
-          startSignalingPolling();
+        setupWebRTC();
+        
+        // 1. Create SDP Offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        log('Created SDP Offer');
+        
+        await postToVercel('action=setOffer', { offer });
+        log('Offer sent to Signaling Server');
+        
+        startSignalingPolling();
       } catch (err) {
-          log(`Connection error: ${err.message}`);
-          setLoading(false);
-          statusMsg.className = 'status-msg error';
-          statusMsg.textContent = 'Connection failed. Please try again.';
+        log(`Connection error: ${err.message}`);
+        setLoading(false);
+        statusMsg.className = 'status-msg error';
+        statusMsg.textContent = 'Connection error: ' + err.message;
       }
     }
 
     function setupWebRTC() {
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
-        };
-        peerConnection = new RTCPeerConnection(configuration);
+      const configuration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      };
+      peerConnection = new RTCPeerConnection(configuration);
 
-        dataChannel = peerConnection.createDataChannel('fileTransfer');
-        setupDataChannel(dataChannel);
+      // Create Data Channel
+      dataChannel = peerConnection.createDataChannel('fileTransfer');
+      setupDataChannel(dataChannel);
 
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                log('Sending ICE Candidate');
-                postToVercel('action=addCandidate&role=web', { candidate: event.candidate });
-            }
-        };
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          log('Discovered local ICE Candidate');
+          postToVercel('action=addCandidate&role=web', { candidate: event.candidate });
+        }
+      };
 
-        peerConnection.onconnectionstatechange = () => {
-            log(`Connection state: ${peerConnection.connectionState}`);
-            if (peerConnection.connectionState === 'connected') {
-                isConnected = true;
-                setLoading(false);
-                statusMsg.textContent = 'Connected Peer-to-Peer!';
-            } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
-                log('Disconnected from peer.');
-            }
-        };
+      peerConnection.onconnectionstatechange = () => {
+        log(`PeerConnection state: ${peerConnection.connectionState}`);
+        if (peerConnection.connectionState === 'connected') {
+          isConnected = true;
+          setLoading(false);
+          statusMsg.className = 'status-msg success';
+          statusMsg.textContent = 'Connected Peer-to-Peer!';
+        } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+          isConnected = false;
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = 'Connection disconnected.';
+        }
+      };
     }
 
     function setupDataChannel(dc) {
-        dc.binaryType = 'arraybuffer';
-        
-        dc.onopen = () => log('DataChannel is open and ready.');
-        dc.onclose = () => log('DataChannel is closed.');
-        
-        dc.onmessage = (event) => {
-            if (typeof event.data === 'string') {
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'file_start') {
-                        log(`Incoming file: ${msg.name} (${msg.size} bytes)`);
-                        fileBuffers[msg.fileId] = {
-                            name: msg.name,
-                            size: msg.size,
-                            received: 0,
-                            chunks: []
-                        };
-                        updateDownloadProgress(msg.fileId, 0, msg.size);
-                    } else if (msg.type === 'file_end') {
-                        log(`File transfer complete: ${msg.fileId}`);
-                        saveFile(msg.fileId);
-                    }
-                } catch (e) {
-                    log(`Unknown text message received: ${event.data}`);
-                }
-            } else {
-                // Binary chunk
-                const fileId = Object.keys(fileBuffers).find(id => fileBuffers[id].received < fileBuffers[id].size);
-                if (fileId) {
-                    const buffer = fileBuffers[fileId];
-                    buffer.chunks.push(event.data);
-                    buffer.received += event.data.byteLength;
-                    updateDownloadProgress(fileId, buffer.received, buffer.size);
-                }
+      dc.binaryType = 'arraybuffer';
+      
+      dc.onopen = () => {
+        log('DataChannel is open and ready');
+        isConnected = true;
+      };
+      
+      dc.onclose = () => {
+        log('DataChannel is closed');
+        isConnected = false;
+      };
+      
+      dc.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'file_start') {
+              log(`Incoming file: ${msg.name} (${msg.size} bytes)`);
+              fileBuffers[msg.fileId] = {
+                name: msg.name,
+                size: msg.size,
+                received: 0,
+                chunks: []
+              };
+              updateDownloadProgress(msg.fileId, 0, msg.size);
+            } else if (msg.type === 'file_end') {
+              log(`File transfer complete: ${msg.fileId}`);
+              saveFile(msg.fileId);
             }
-        };
+          } catch (e) {
+            log(`Text message error: ${e.message}`);
+          }
+        } else {
+          // Binary chunk received
+          const fileId = Object.keys(fileBuffers).find(id => fileBuffers[id].received < fileBuffers[id].size);
+          if (fileId) {
+            const buffer = fileBuffers[fileId];
+            buffer.chunks.push(event.data);
+            buffer.received += event.data.byteLength;
+            updateDownloadProgress(fileId, buffer.received, buffer.size);
+          }
+        }
+      };
     }
     
     function updateDownloadProgress(fileId, received, total) {
-        const btn = document.getElementById(`btn-${fileId}`);
-        if (btn) {
-            const percent = Math.round((received / total) * 100);
-            btn.textContent = `DOWNLOADING ${percent}%`;
-        }
+      const btn = document.getElementById(`btn-${fileId}`);
+      if (btn) {
+        const percent = Math.min(100, Math.round((received / total) * 100));
+        btn.textContent = `DOWNLOADING ${percent}%`;
+      }
     }
 
     function saveFile(fileId) {
-        const buffer = fileBuffers[fileId];
-        if (!buffer) return;
-        
-        const blob = new Blob(buffer.chunks);
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = buffer.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        const btn = document.getElementById(`btn-${fileId}`);
-        if (btn) {
-            btn.textContent = 'DOWNLOADED';
-            btn.style.background = '#1b5e20';
-            btn.style.opacity = '1';
-            btn.disabled = false;
-        }
-        
-        delete fileBuffers[fileId];
+      const buffer = fileBuffers[fileId];
+      if (!buffer) return;
+      
+      const blob = new Blob(buffer.chunks);
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buffer.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      const btn = document.getElementById(`btn-${fileId}`);
+      if (btn) {
+        btn.textContent = 'DOWNLOADED';
+        btn.style.background = '#1b5e20';
+        btn.style.opacity = '1';
+        btn.disabled = false;
+      }
+      
+      delete fileBuffers[fileId];
     }
 
     function startSignalingPolling() {
-        let answerReceived = false;
-        let processedCandidates = 0;
-        let metadataLoaded = false;
+      let answerReceived = false;
+      let processedCandidates = 0;
+      let metadataLoaded = false;
 
-        signalingInterval = setInterval(async () => {
-            try {
-                const res = await fetch(`/api/webrtc?pin=${currentPin}`);
-                const data = await res.json();
-                
-                if (data.metadata && !metadataLoaded) {
-                    metadataLoaded = true;
-                    displayFiles(currentPin, data.metadata);
-                }
+      if (signalingInterval) clearInterval(signalingInterval);
 
-                if (!answerReceived && data.answer) {
-                    log('Received SDP Answer');
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    answerReceived = true;
-                }
+      signalingInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/webrtc?pin=${currentPin}`);
+          const data = await res.json();
+          
+          // 1. Show Files metadata as soon as available
+          if (data.metadata && !metadataLoaded) {
+            metadataLoaded = true;
+            displayFiles(currentPin, data.metadata);
+          }
 
-                if (data.candidates_android && data.candidates_android.length > processedCandidates) {
-                    for (let i = processedCandidates; i < data.candidates_android.length; i++) {
-                        log('Received Android ICE Candidate');
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidates_android[i]));
-                    }
-                    processedCandidates = data.candidates_android.length;
-                }
-            } catch (err) {
-                log(`Polling error: ${err.message}`);
+          // 2. Process Answer when available
+          if (!answerReceived && data.answer) {
+            answerReceived = true;
+            log('Received SDP Answer from Android');
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            isRemoteDescriptionSet = true;
+            log('Remote Description set successfully on Web');
+
+            // Drain queued ICE Candidates
+            for (const cand of pendingRemoteCandidates) {
+              log('Applying queued Android ICE Candidate');
+              await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
             }
-        }, 2000);
+            pendingRemoteCandidates = [];
+          }
+
+          // 3. Process Android ICE candidates
+          if (data.candidates_android && data.candidates_android.length > processedCandidates) {
+            for (let i = processedCandidates; i < data.candidates_android.length; i++) {
+              const cand = data.candidates_android[i];
+              if (isRemoteDescriptionSet) {
+                log('Applying incoming Android ICE Candidate directly');
+                await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+              } else {
+                log('Queueing Android ICE Candidate (Remote Description not set yet)');
+                pendingRemoteCandidates.push(cand);
+              }
+            }
+            processedCandidates = data.candidates_android.length;
+          }
+        } catch (err) {
+          log(`Polling error: ${err.message}`);
+        }
+      }, 1500);
     }
 
     function displayFiles(pin, files) {
@@ -588,9 +650,9 @@
         btn.textContent = 'DOWNLOAD';
         
         btn.onclick = () => {
-          if (!isConnected || dataChannel.readyState !== 'open') {
-              alert("Connection not fully established yet. Please wait a moment.");
-              return;
+          if (!dataChannel || dataChannel.readyState !== 'open') {
+            alert("Connecting to phone... please wait a few seconds and try again.");
+            return;
           }
           btn.textContent = 'STARTING...';
           btn.style.opacity = '0.5';
@@ -611,12 +673,13 @@
       
       currentPin = '';
       isConnected = false;
+      isRemoteDescriptionSet = false;
+      pendingRemoteCandidates = [];
       
       filesCard.style.display = 'none';
       pinCard.style.display = 'block';
       pinInputs.forEach(i => i.value = '');
       statusMsg.textContent = '';
-      debugDiv.innerHTML = '<div>Awaiting connection logs...</div>';
       pinInputs[0].focus();
     }
   </script>
